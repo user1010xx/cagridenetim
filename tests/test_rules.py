@@ -1,0 +1,221 @@
+import unittest
+from datetime import date, datetime, time
+from zoneinfo import ZoneInfo
+
+from bot.models import DepartmentRules, Personnel
+from bot.rules import CallRecord, evaluate_department
+
+
+TZ = ZoneInfo("Europe/Istanbul")
+
+
+def dt(value: str) -> datetime:
+    hour, minute = map(int, value.split(":"))
+    return datetime(2026, 6, 9, hour, minute, tzinfo=TZ)
+
+
+def call(name: str, value: str, duration: int = 60, extension: str | None = None) -> CallRecord:
+    return CallRecord(name, extension, dt(value), duration, "1")
+
+
+class RulesTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.rules = DepartmentRules(
+            department_id=1,
+            work_start_time=time(11, 10),
+            pre_break_leave_time=None,
+            break_start_time=time(13, 50),
+            break_end_time=time(15, 15),
+            post_break_start_time=None,
+            work_end_time=time(18, 50),
+            max_call_gap_minutes=15,
+        )
+        self.report_date = date(2026, 6, 9)
+        self.personnel = [Personnel(1, 1, "Ali", "1001", True)]
+
+    def evaluate(self, calls: list[CallRecord], now: str = "19:00"):
+        return evaluate_department(calls, self.personnel, self.rules, self.report_date, dt(now), TZ)[0]
+
+    def test_first_call_late_is_violation(self) -> None:
+        result = self.evaluate([call("Ali", "11:25", extension="1001"), call("Ali", "18:55", extension="1001")])
+        self.assertTrue(any("Mesai başlangıcı" in violation for violation in result.violations))
+
+    def test_gap_over_limit_is_violation(self) -> None:
+        result = self.evaluate(
+            [
+                call("Ali", "11:05", duration=60, extension="1001"),
+                call("Ali", "11:30", extension="1001"),
+                call("Ali", "18:55", extension="1001"),
+            ]
+        )
+        self.assertTrue(any("Çağrı arası" in violation for violation in result.violations))
+
+    def test_break_interval_is_excluded_from_gap(self) -> None:
+        result = self.evaluate(
+            [
+                call("Ali", "11:05", extension="1001"),
+                call("Ali", "13:49", duration=60, extension="1001"),
+                call("Ali", "15:16", extension="1001"),
+                call("Ali", "18:55", extension="1001"),
+            ]
+        )
+        break_gap_violations = [
+            violation for violation in result.violations if "13:49 - 15:16" in violation
+        ]
+        self.assertEqual(break_gap_violations, [])
+
+    def test_work_end_requires_call_after_end(self) -> None:
+        result = self.evaluate([call("Ali", "11:05", extension="1001"), call("Ali", "18:48", extension="1001")])
+        self.assertTrue(any("Mesai bitişi" in violation for violation in result.violations))
+
+    def test_call_continuing_after_work_end_is_not_work_end_violation(self) -> None:
+        result = self.evaluate([call("Ali", "11:05", extension="1001"), call("Ali", "18:49", duration=180, extension="1001")])
+        self.assertFalse(any("Mesai bitişi" in violation for violation in result.violations))
+
+    def test_current_idle_gap_is_violation(self) -> None:
+        result = self.evaluate(
+            [
+                call("Ali", "11:05", extension="1001"),
+                call("Ali", "12:00", extension="1001"),
+                call("Ali", "18:55", extension="1001"),
+            ],
+            now="12:30",
+        )
+        self.assertTrue(any("Güncel bekleme" in violation for violation in result.violations))
+
+    def test_personnel_without_calls_is_detected(self) -> None:
+        result = self.evaluate([])
+        self.assertTrue(any("çağrı yok" in violation for violation in result.violations))
+
+    def test_blank_rule_is_not_applied(self) -> None:
+        self.rules = DepartmentRules(
+            department_id=1,
+            work_start_time=None,
+            pre_break_leave_time=None,
+            break_start_time=None,
+            break_end_time=None,
+            post_break_start_time=None,
+            work_end_time=None,
+            max_call_gap_minutes=None,
+        )
+        result = self.evaluate([])
+        self.assertEqual(result.violations, [])
+
+    def test_post_break_start_violation(self) -> None:
+        self.rules = DepartmentRules(
+            department_id=1,
+            work_start_time=None,
+            pre_break_leave_time=None,
+            break_start_time=time(14, 0),
+            break_end_time=time(15, 0),
+            post_break_start_time=time(15, 15),
+            work_end_time=None,
+            max_call_gap_minutes=None,
+        )
+        result = self.evaluate([call("Ali", "15:20", extension="1001")], now="15:30")
+        self.assertTrue(any("Mola sonrası" in violation for violation in result.violations))
+
+    def test_pre_break_leave_violation(self) -> None:
+        self.rules = DepartmentRules(
+            department_id=1,
+            work_start_time=None,
+            pre_break_leave_time=time(13, 50),
+            break_start_time=time(14, 0),
+            break_end_time=time(15, 0),
+            post_break_start_time=None,
+            work_end_time=None,
+            max_call_gap_minutes=None,
+        )
+        result = self.evaluate([call("Ali", "13:30", extension="1001")], now="14:00")
+        self.assertTrue(any("Mola öncesi" in violation for violation in result.violations))
+
+    def test_pre_break_leave_no_violation_when_call_reaches_limit(self) -> None:
+        self.rules = DepartmentRules(
+            department_id=1,
+            work_start_time=None,
+            pre_break_leave_time=time(13, 50),
+            break_start_time=time(14, 0),
+            break_end_time=time(15, 0),
+            post_break_start_time=None,
+            work_end_time=None,
+            max_call_gap_minutes=None,
+        )
+        result = self.evaluate([call("Ali", "13:49", duration=120, extension="1001")], now="14:00")
+        self.assertFalse(any("Mola öncesi" in violation for violation in result.violations))
+
+    def test_pre_work_call_gap_crossing_work_start_is_checked(self) -> None:
+        result = self.evaluate([call("Ali", "10:00", extension="1001"), call("Ali", "11:12", extension="1001")])
+        self.assertTrue(any("Çağrı arası" in violation for violation in result.violations))
+
+    def test_pre_work_call_near_work_start_is_not_violation(self) -> None:
+        result = self.evaluate([call("Ali", "10:58", extension="1001"), call("Ali", "11:11", extension="1001")])
+        self.assertFalse(any("Çağrı arası" in violation for violation in result.violations))
+
+    def test_pre_break_free_window_is_excluded_from_gap(self) -> None:
+        self.rules = DepartmentRules(
+            department_id=1,
+            work_start_time=None,
+            pre_break_leave_time=time(13, 50),
+            break_start_time=time(14, 0),
+            break_end_time=time(15, 0),
+            post_break_start_time=time(15, 15),
+            work_end_time=None,
+            max_call_gap_minutes=15,
+        )
+        result = self.evaluate(
+            [
+                call("Ali", "13:49", duration=120, extension="1001"),
+                call("Ali", "15:14", extension="1001"),
+                call("Ali", "15:20", extension="1001"),
+            ],
+            now="15:30",
+        )
+        self.assertFalse(any("Çağrı arası" in violation for violation in result.violations))
+
+    def test_post_break_free_window_only_applies_to_first_post_break_call(self) -> None:
+        self.rules = DepartmentRules(
+            department_id=1,
+            work_start_time=None,
+            pre_break_leave_time=time(13, 50),
+            break_start_time=time(14, 0),
+            break_end_time=time(15, 0),
+            post_break_start_time=time(15, 15),
+            work_end_time=None,
+            max_call_gap_minutes=15,
+        )
+        result = self.evaluate(
+            [
+                call("Ali", "15:14", extension="1001"),
+                call("Ali", "15:31", extension="1001"),
+            ],
+            now="15:40",
+        )
+        self.assertTrue(any("Çağrı arası" in violation for violation in result.violations))
+
+    def test_personnel_on_weekly_leave_is_not_evaluated(self) -> None:
+        result = evaluate_department(
+            [],
+            self.personnel,
+            self.rules,
+            self.report_date,
+            dt("19:00"),
+            TZ,
+            weekly_leave_names={"ali"},
+        )
+        self.assertEqual(result, [])
+
+    def test_calls_during_leave_period_are_not_evaluated(self) -> None:
+        result = evaluate_department(
+            [call("Ali", "11:20", extension="1001"), call("Ali", "18:55", extension="1001")],
+            self.personnel,
+            self.rules,
+            self.report_date,
+            dt("19:00"),
+            TZ,
+            leave_periods={"ali": [(dt("11:00"), dt("19:00"))]},
+        )[0]
+        self.assertEqual(result.violations, [])
+
+
+if __name__ == "__main__":
+    unittest.main()

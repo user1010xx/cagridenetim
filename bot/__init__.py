@@ -1,0 +1,1 @@
+"""Invekto PBX kalite kontrol botu."""

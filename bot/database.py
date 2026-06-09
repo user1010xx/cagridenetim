@@ -1,0 +1,514 @@
+from __future__ import annotations
+
+from contextlib import contextmanager
+import sqlite3
+from typing import Iterator
+
+from bot.models import Department, DepartmentResponsible, DepartmentRules, Personnel
+from bot.time_utils import format_time, parse_hhmm
+
+
+class Database:
+    def __init__(self, path: str) -> None:
+        self.path = path
+        self.init()
+
+    @contextmanager
+    def connect(self) -> Iterator[sqlite3.Connection]:
+        connection = sqlite3.connect(self.path)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        try:
+            yield connection
+            connection.commit()
+        finally:
+            connection.close()
+
+    def init(self) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS departments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    company_code TEXT NOT NULL,
+                    telegram_chat_id TEXT NOT NULL,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS department_rules (
+                    department_id INTEGER PRIMARY KEY,
+                    work_start_time TEXT,
+                    pre_break_leave_time TEXT,
+                    break_start_time TEXT,
+                    break_end_time TEXT,
+                    post_break_start_time TEXT,
+                    work_end_time TEXT,
+                    max_call_gap_minutes INTEGER,
+                    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE
+                )
+                """
+            )
+            self._migrate_department_rules(connection)
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS personnel (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    department_id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    extension TEXT,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (department_id, name),
+                    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS personnel_leave_periods (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    department_id INTEGER NOT NULL,
+                    personnel_name TEXT NOT NULL,
+                    start_at TEXT NOT NULL,
+                    end_at TEXT,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS weekly_leaves (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    department_id INTEGER NOT NULL,
+                    personnel_name TEXT NOT NULL,
+                    weekday INTEGER NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (department_id, personnel_name, weekday),
+                    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS department_responsibles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    department_id INTEGER NOT NULL,
+                    username TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (department_id, username),
+                    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE
+                )
+                """
+            )
+
+    def add_department(self, name: str, company_code: str, telegram_chat_id: str) -> Department:
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO departments (name, company_code, telegram_chat_id)
+                VALUES (?, ?, ?)
+                """,
+                (name.strip(), company_code.strip(), str(telegram_chat_id).strip()),
+            )
+            department_id = int(cursor.lastrowid)
+            connection.execute(
+                """
+                INSERT INTO department_rules (
+                    department_id,
+                    work_start_time,
+                    pre_break_leave_time,
+                    break_start_time,
+                    break_end_time,
+                    post_break_start_time,
+                    work_end_time,
+                    max_call_gap_minutes
+                )
+                VALUES (?, '11:10', NULL, '13:50', '15:15', NULL, '18:50', 15)
+                """,
+                (department_id,),
+            )
+        department = self.get_department(name)
+        if department is None:
+            raise RuntimeError("Departman kaydedildi ancak okunamadı.")
+        return department
+
+    def get_department(self, identifier: str | int) -> Department | None:
+        query = "SELECT * FROM departments WHERE id = ?" if isinstance(identifier, int) else "SELECT * FROM departments WHERE lower(name) = lower(?)"
+        with self.connect() as connection:
+            row = connection.execute(query, (identifier,)).fetchone()
+        return self._department_from_row(row) if row else None
+
+    def list_departments(self, only_active: bool = False) -> list[Department]:
+        query = "SELECT * FROM departments"
+        params: tuple[object, ...] = ()
+        if only_active:
+            query += " WHERE is_active = 1"
+        query += " ORDER BY name"
+        with self.connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [self._department_from_row(row) for row in rows]
+
+    def set_department_active(self, identifier: str | int, active: bool) -> bool:
+        department = self.get_department(identifier)
+        if department is None:
+            return False
+        with self.connect() as connection:
+            connection.execute(
+                "UPDATE departments SET is_active = ? WHERE id = ?",
+                (1 if active else 0, department.id),
+            )
+        return True
+
+    def delete_department(self, identifier: str | int) -> bool:
+        department = self.get_department(identifier)
+        if department is None:
+            return False
+        with self.connect() as connection:
+            connection.execute("DELETE FROM departments WHERE id = ?", (department.id,))
+        return True
+
+    def update_department_code(self, identifier: str | int, company_code: str) -> bool:
+        department = self.get_department(identifier)
+        if department is None:
+            return False
+        with self.connect() as connection:
+            connection.execute(
+                "UPDATE departments SET company_code = ? WHERE id = ?",
+                (company_code.strip(), department.id),
+            )
+        return True
+
+    def update_department_chat(self, identifier: str | int, telegram_chat_id: str) -> bool:
+        department = self.get_department(identifier)
+        if department is None:
+            return False
+        with self.connect() as connection:
+            connection.execute(
+                "UPDATE departments SET telegram_chat_id = ? WHERE id = ?",
+                (str(telegram_chat_id).strip(), department.id),
+            )
+        return True
+
+    def get_rules(self, department_id: int) -> DepartmentRules:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM department_rules WHERE department_id = ?",
+                (department_id,),
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("Departman kural kaydı bulunamadı.")
+        return DepartmentRules(
+            department_id=int(row["department_id"]),
+            work_start_time=_parse_optional_time(row["work_start_time"]),
+            pre_break_leave_time=_parse_optional_time(row["pre_break_leave_time"]),
+            break_start_time=_parse_optional_time(row["break_start_time"]),
+            break_end_time=_parse_optional_time(row["break_end_time"]),
+            post_break_start_time=_parse_optional_time(row["post_break_start_time"]),
+            work_end_time=_parse_optional_time(row["work_end_time"]),
+            max_call_gap_minutes=int(row["max_call_gap_minutes"]) if row["max_call_gap_minutes"] is not None else None,
+        )
+
+    def update_rules(
+        self,
+        identifier: str | int,
+        work_start_time: str | None,
+        pre_break_leave_time: str | None,
+        break_start_time: str | None,
+        break_end_time: str | None,
+        post_break_start_time: str | None,
+        work_end_time: str | None,
+        max_call_gap_minutes: int | None,
+    ) -> bool:
+        department = self.get_department(identifier)
+        if department is None:
+            return False
+        values = (
+            _format_optional_time(work_start_time),
+            _format_optional_time(pre_break_leave_time),
+            _format_optional_time(break_start_time),
+            _format_optional_time(break_end_time),
+            _format_optional_time(post_break_start_time),
+            _format_optional_time(work_end_time),
+            int(max_call_gap_minutes) if max_call_gap_minutes is not None else None,
+            department.id,
+        )
+        with self.connect() as connection:
+            connection.execute(
+                """
+                UPDATE department_rules
+                SET work_start_time = ?,
+                    pre_break_leave_time = ?,
+                    break_start_time = ?,
+                    break_end_time = ?,
+                    post_break_start_time = ?,
+                    work_end_time = ?,
+                    max_call_gap_minutes = ?
+                WHERE department_id = ?
+                """,
+                values,
+            )
+        return True
+
+    def add_personnel(self, department_identifier: str | int, name: str, extension: str | None) -> Personnel | None:
+        department = self.get_department(department_identifier)
+        if department is None:
+            return None
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO personnel (department_id, name, extension)
+                VALUES (?, ?, ?)
+                """,
+                (department.id, name.strip(), extension.strip() if extension else None),
+            )
+            personnel_id = int(cursor.lastrowid)
+        return self.get_personnel(personnel_id)
+
+    def get_personnel(self, personnel_id: int) -> Personnel | None:
+        with self.connect() as connection:
+            row = connection.execute("SELECT * FROM personnel WHERE id = ?", (personnel_id,)).fetchone()
+        return self._personnel_from_row(row) if row else None
+
+    def list_personnel(self, department_id: int, only_active: bool = True) -> list[Personnel]:
+        query = "SELECT * FROM personnel WHERE department_id = ?"
+        params: tuple[object, ...] = (department_id,)
+        if only_active:
+            query += " AND is_active = 1"
+        query += " ORDER BY name"
+        with self.connect() as connection:
+            rows = connection.execute(query, params).fetchall()
+        return [self._personnel_from_row(row) for row in rows]
+
+    def delete_personnel(self, personnel_id: int) -> bool:
+        with self.connect() as connection:
+            cursor = connection.execute("DELETE FROM personnel WHERE id = ?", (personnel_id,))
+        return cursor.rowcount > 0
+
+    def start_leave(self, department_identifier: str | int, personnel_name: str, start_at: str) -> bool:
+        department = self.get_department(department_identifier)
+        if department is None:
+            return False
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO personnel_leave_periods (department_id, personnel_name, start_at)
+                VALUES (?, ?, ?)
+                """,
+                (department.id, personnel_name.strip(), start_at),
+            )
+        return True
+
+    def end_leave(self, department_identifier: str | int, personnel_name: str, end_at: str) -> bool:
+        department = self.get_department(department_identifier)
+        if department is None:
+            return False
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE personnel_leave_periods
+                SET end_at = ?
+                WHERE department_id = ?
+                  AND lower(personnel_name) = lower(?)
+                  AND end_at IS NULL
+                """,
+                (end_at, department.id, personnel_name.strip()),
+            )
+        return cursor.rowcount > 0
+
+    def list_leave_periods(self, department_id: int, report_date: str) -> list[sqlite3.Row]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM personnel_leave_periods
+                WHERE department_id = ?
+                  AND date(start_at) <= date(?)
+                  AND (end_at IS NULL OR date(end_at) >= date(?))
+                ORDER BY start_at
+                """,
+                (department_id, report_date, report_date),
+            ).fetchall()
+        return rows
+
+    def add_weekly_leave(self, department_identifier: str | int, personnel_name: str, weekday: int) -> bool:
+        department = self.get_department(department_identifier)
+        if department is None:
+            return False
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT OR REPLACE INTO weekly_leaves (department_id, personnel_name, weekday)
+                VALUES (?, ?, ?)
+                """,
+                (department.id, personnel_name.strip(), int(weekday)),
+            )
+        return True
+
+    def delete_weekly_leave(self, department_identifier: str | int, personnel_name: str, weekday: int | None = None) -> bool:
+        department = self.get_department(department_identifier)
+        if department is None:
+            return False
+        query = "DELETE FROM weekly_leaves WHERE department_id = ? AND lower(personnel_name) = lower(?)"
+        params: tuple[object, ...] = (department.id, personnel_name.strip())
+        if weekday is not None:
+            query += " AND weekday = ?"
+            params = (department.id, personnel_name.strip(), int(weekday))
+        with self.connect() as connection:
+            cursor = connection.execute(query, params)
+        return cursor.rowcount > 0
+
+    def list_weekly_leaves(self, department_id: int) -> list[sqlite3.Row]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM weekly_leaves WHERE department_id = ? ORDER BY personnel_name, weekday",
+                (department_id,),
+            ).fetchall()
+        return rows
+
+    def add_responsible(self, department_identifier: str | int, username: str) -> bool:
+        department = self.get_department(department_identifier)
+        if department is None:
+            return False
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT OR REPLACE INTO department_responsibles (department_id, username)
+                VALUES (?, ?)
+                """,
+                (department.id, _normalize_username(username)),
+            )
+        return True
+
+    def delete_responsible(self, department_identifier: str | int, username: str) -> bool:
+        department = self.get_department(department_identifier)
+        if department is None:
+            return False
+        with self.connect() as connection:
+            cursor = connection.execute(
+                """
+                DELETE FROM department_responsibles
+                WHERE department_id = ? AND lower(username) = lower(?)
+                """,
+                (department.id, _normalize_username(username)),
+            )
+        return cursor.rowcount > 0
+
+    def list_responsibles(self, department_id: int) -> list[DepartmentResponsible]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM department_responsibles WHERE department_id = ? ORDER BY username",
+                (department_id,),
+            ).fetchall()
+        return [
+            DepartmentResponsible(
+                id=int(row["id"]),
+                department_id=int(row["department_id"]),
+                username=str(row["username"]),
+            )
+            for row in rows
+        ]
+
+    @staticmethod
+    def _department_from_row(row: sqlite3.Row) -> Department:
+        return Department(
+            id=int(row["id"]),
+            name=str(row["name"]),
+            company_code=str(row["company_code"]),
+            telegram_chat_id=str(row["telegram_chat_id"]),
+            is_active=bool(row["is_active"]),
+        )
+
+    @staticmethod
+    def _personnel_from_row(row: sqlite3.Row) -> Personnel:
+        return Personnel(
+            id=int(row["id"]),
+            department_id=int(row["department_id"]),
+            name=str(row["name"]),
+            extension=str(row["extension"]) if row["extension"] else None,
+            is_active=bool(row["is_active"]),
+        )
+
+    @staticmethod
+    def _migrate_department_rules(connection: sqlite3.Connection) -> None:
+        rows = connection.execute("PRAGMA table_info(department_rules)").fetchall()
+        columns = {row["name"] for row in rows}
+        expected = [
+            "department_id",
+            "work_start_time",
+            "pre_break_leave_time",
+            "break_start_time",
+            "break_end_time",
+            "post_break_start_time",
+            "work_end_time",
+            "max_call_gap_minutes",
+        ]
+        has_expected_columns = set(expected).issubset(columns)
+        has_not_null_rule_columns = any(
+            row["name"] in expected[1:] and bool(row["notnull"])
+            for row in rows
+        )
+        if has_expected_columns and not has_not_null_rule_columns:
+            return
+        connection.execute(
+            """
+            CREATE TABLE department_rules_new (
+                department_id INTEGER PRIMARY KEY,
+                work_start_time TEXT,
+                pre_break_leave_time TEXT,
+                break_start_time TEXT,
+                break_end_time TEXT,
+                post_break_start_time TEXT,
+                work_end_time TEXT,
+                max_call_gap_minutes INTEGER,
+                FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE
+            )
+            """
+        )
+        select_columns = []
+        for column in expected:
+            if column in columns:
+                select_columns.append(column)
+            else:
+                select_columns.append(f"NULL AS {column}")
+        connection.execute(
+            f"""
+            INSERT OR REPLACE INTO department_rules_new (
+                department_id,
+                work_start_time,
+                pre_break_leave_time,
+                break_start_time,
+                break_end_time,
+                post_break_start_time,
+                work_end_time,
+                max_call_gap_minutes
+            )
+            SELECT {", ".join(select_columns)}
+            FROM department_rules
+            """
+        )
+        connection.execute("DROP TABLE department_rules")
+        connection.execute("ALTER TABLE department_rules_new RENAME TO department_rules")
+
+
+def _parse_optional_time(value: str | None):
+    if value is None:
+        return None
+    return parse_hhmm(value)
+
+
+def _format_optional_time(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return format_time(parse_hhmm(value))
+
+
+def _normalize_username(value: str) -> str:
+    username = value.strip().lstrip("@")
+    if not username:
+        raise ValueError("Telegram kullanıcı adı boş olamaz.")
+    return username
