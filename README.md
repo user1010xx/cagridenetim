@@ -4,38 +4,19 @@ Invekto PBX API üzerinden çağrı raporu alır, departman bazlı kurallara gö
 
 ## Railway Environment Variables
 
-Railway üzerinde sadece global/gizli bilgiler tutulur:
-
-```env
-TELEGRAM_BOT_TOKEN=...
-INVEKTO_API_URL=https://app.invekto.com/invekto/pbxreport
-TIMEZONE=Europe/Istanbul
-ADMIN_USER_IDS=telegram_user_id_1,telegram_user_id_2
-ALLOWED_GROUP_NAMES=Çağrı Kontrol Grubu
-DATABASE_PATH=/data/bot.sqlite3
-REPORT_INTERVAL_MINUTES=60
-REQUEST_TIMEOUT_SECONDS=30
-SCHEDULER_START_TIME=11:30
-SCHEDULER_END_TIME=19:00
-```
+Railway üzerinde global/gizli bilgiler Environment Variables alanından girilmelidir. Bu değerler GitHub reposunda tutulmaz.
 
 Departman, `companyCode`, personel ve kurallar Telegram bot komutlarıyla veritabanına kaydedilir.
 
-Railway'de SQLite kullanacaksanız kalıcı volume ekleyip `DATABASE_PATH` değerini volume altına verin:
-
-```env
-DATABASE_PATH=/data/bot.sqlite3
-```
-
-Kalıcı volume kullanılmazsa departman/kural kayıtları yeniden deploy sonrası kaybolabilir.
+Railway'de SQLite kullanacaksanız kalıcı volume ekleyin. Kalıcı volume kullanılmazsa departman/kural kayıtları yeniden deploy sonrası kaybolabilir.
 
 ## Railway Deploy Notları
 
 1. Railway'de GitHub repo üzerinden yeni servis oluşturun.
 2. Servise bir volume ekleyin ve mount path değerini `/data` yapın.
-3. Environment variables alanına yukarıdaki değerleri girin.
-4. `ADMIN_USER_IDS` için Telegram kullanıcı ID kullanılmalıdır. Bot özel sohbetlerde sadece bu ID'lere cevap verir.
-5. Botun grup içinde herkes tarafından kullanılabilmesi için grup adını `ALLOWED_GROUP_NAMES` içine yazın. Birden fazla grup için virgül kullanabilirsiniz.
+3. Gerekli Environment Variables değerlerini Railway arayüzünden girin.
+4. Özel sohbet erişimi için Telegram kullanıcı ID değerlerini Railway arayüzünden tanımlayın.
+5. Botun grup içinde herkes tarafından kullanılabilmesi için izinli grup adlarını Railway arayüzünden tanımlayın.
 6. Invekto tarafında Railway outbound IP adresinin whitelist edilmesi gerekir.
 7. Deploy sonrası Telegram'da `/start` ve `/departmanekle` ile kurulum yapılabilir.
 
