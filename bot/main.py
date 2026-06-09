@@ -21,6 +21,7 @@ from bot.handlers import (
     PERSONNEL_ADD_DEPARTMENT,
     PERSONNEL_ADD_EXTENSION,
     PERSONNEL_ADD_NAME,
+    PERSONNEL_BULK_FILE,
     RESPONSIBLE_ADD_DEPARTMENT,
     RESPONSIBLE_ADD_USERNAME,
     RESPONSIBLE_DELETE_DEPARTMENT,
@@ -71,6 +72,8 @@ from bot.handlers import (
     personelekle_start,
     personel_listele,
     personel_sil,
+    personeltopluekle_file,
+    personeltopluekle_start,
     rapor,
     sorumluekle_department,
     sorumluekle_start,
@@ -183,6 +186,15 @@ def build_application() -> Application:
                 PERSONNEL_ADD_DEPARTMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, personelekle_department)],
                 PERSONNEL_ADD_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, personelekle_name)],
                 PERSONNEL_ADD_EXTENSION: [MessageHandler(filters.TEXT & ~filters.COMMAND, personelekle_extension)],
+            },
+            fallbacks=[CommandHandler("iptal", kuralayarla_cancel)],
+        )
+    )
+    application.add_handler(
+        ConversationHandler(
+            entry_points=[CommandHandler(["personeltopluekle", "personel_toplu_ekle"], personeltopluekle_start)],
+            states={
+                PERSONNEL_BULK_FILE: [MessageHandler(~filters.COMMAND, personeltopluekle_file)],
             },
             fallbacks=[CommandHandler("iptal", kuralayarla_cancel)],
         )

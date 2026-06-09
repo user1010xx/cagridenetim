@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Callable
+from typing import Callable, Sequence
 
 from telegram import Update
 from telegram.constants import ParseMode
@@ -10,9 +10,11 @@ from telegram.ext import ContextTypes, ConversationHandler
 from bot.config import Config
 from bot.database import Database
 from bot.invekto_client import InvektoClient
+from bot.models import Department, Personnel
+from bot.personnel_import import PersonnelImportRow, parse_personnel_workbook
 from bot.reporting import split_telegram_message
-from bot.time_utils import parse_hhmm
 from bot.service import generate_department_report
+from bot.time_utils import parse_hhmm
 
 
 (
@@ -32,6 +34,7 @@ from bot.service import generate_department_report
     PERSONNEL_ADD_DEPARTMENT,
     PERSONNEL_ADD_NAME,
     PERSONNEL_ADD_EXTENSION,
+    PERSONNEL_BULK_FILE,
     LEAVE_DEPARTMENT,
     LEAVE_PERSONNEL,
     LEAVE_CANCEL_DEPARTMENT,
@@ -47,7 +50,7 @@ from bot.service import generate_department_report
     WEEKLY_LEAVE_CANCEL_DEPARTMENT,
     WEEKLY_LEAVE_CANCEL_PERSONNEL,
     WEEKLY_LEAVE_CANCEL_DAY,
-) = range(31)
+) = range(32)
 
 
 WEEKDAY_NAMES = {
@@ -89,6 +92,7 @@ Temel komutlar:
 /chatayarla - Rapor chat ID değerini adım adım günceller
 /kuralayarla - Kuralları adım adım tanımlar
 /personelekle - Personeli adım adım ekler
+/personeltopluekle - Excel dosyasıyla toplu personel ekler
 /personel_listele Departman
 /personel_sil PersonelID
 /rapor - Aktif tüm departmanları kontrol eder
@@ -501,6 +505,44 @@ async def personelekle_extension(update: Update, context: ContextTypes.DEFAULT_T
     return ConversationHandler.END
 
 
+@admin_only
+async def personeltopluekle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.effective_message.reply_text("Excel dosyasını gönderiniz. İlk sayfada A departman, B personel adı, C dahili olmalı.")
+    return PERSONNEL_BULK_FILE
+
+
+async def personeltopluekle_file(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    database: Database = context.application.bot_data["database"]
+    document = update.effective_message.document
+    if document is None:
+        await update.effective_message.reply_text("Lütfen .xlsx veya .xlsm Excel dosyası gönderiniz.")
+        return PERSONNEL_BULK_FILE
+    file_name = (document.file_name or "").casefold()
+    if not file_name.endswith((".xlsx", ".xlsm")):
+        await update.effective_message.reply_text("Lütfen .xlsx veya .xlsm uzantılı Excel dosyası gönderiniz.")
+        return PERSONNEL_BULK_FILE
+    try:
+        telegram_file = await document.get_file()
+        content = bytes(await telegram_file.download_as_bytearray())
+        rows, errors = parse_personnel_workbook(content)
+    except Exception as exc:
+        await update.effective_message.reply_text(f"Excel dosyası okunamadı: {exc}")
+        return PERSONNEL_BULK_FILE
+    if not rows and not errors:
+        await update.effective_message.reply_text("Excel dosyasında eklenecek personel bulunamadı.")
+        return PERSONNEL_BULK_FILE
+    added_count, failed = _import_personnel_rows(database, rows, errors)
+    lines = [f"✅ Toplu personel ekleme tamamlandı. Eklenen: {added_count}"]
+    if failed:
+        lines.append(f"Eklenemeyen: {len(failed)}")
+        lines.extend(failed[:30])
+        if len(failed) > 30:
+            lines.append(f"... {len(failed) - 30} satır daha")
+    for message in split_telegram_message("\n".join(lines)):
+        await update.effective_message.reply_text(message)
+    return ConversationHandler.END
+
+
 @allowed_only
 async def personel_listele(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     database: Database = context.application.bot_data["database"]
@@ -516,12 +558,8 @@ async def personel_listele(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if not personnel:
         await update.effective_message.reply_text("Bu departmanda personel yok.")
         return
-    lines = [f"👥 {department.name} personelleri"]
-    for person in personnel:
-        status = "aktif" if person.is_active else "pasif"
-        extension = person.extension or "-"
-        lines.append(f"{person.id}. {person.name} | dahili: {extension} | {status}")
-    await update.effective_message.reply_text("\n".join(lines))
+    for message in split_telegram_message(_format_personnel_list(department.name, personnel)):
+        await update.effective_message.reply_text(message)
 
 
 @admin_only
@@ -865,6 +903,36 @@ def _plain_args(update: Update) -> str:
     text = update.effective_message.text or ""
     _, _, payload = text.partition(" ")
     return payload.strip()
+
+
+def _format_personnel_list(department_name: str, personnel: Sequence[Personnel]) -> str:
+    lines = [f"👥 {department_name} personelleri"]
+    for index, person in enumerate(personnel, start=1):
+        status = "aktif" if person.is_active else "pasif"
+        extension = person.extension or "-"
+        lines.append(f"{index}. {person.name} | dahili: {extension} | {status}")
+    return "\n".join(lines)
+
+
+def _import_personnel_rows(database: Database, rows: Sequence[PersonnelImportRow], errors: Sequence[str]) -> tuple[int, list[str]]:
+    added_count = 0
+    failed = list(errors)
+    departments: dict[str, Department | None] = {}
+    for row in rows:
+        key = row.department_name.casefold()
+        if key not in departments:
+            departments[key] = database.get_department(row.department_name)
+        department = departments[key]
+        if department is None:
+            failed.append(f"Satır {row.row_number}: departman bulunamadı")
+            continue
+        try:
+            database.add_personnel(department.id, row.personnel_name, row.extension)
+        except Exception as exc:
+            failed.append(f"Satır {row.row_number}: {exc}")
+            continue
+        added_count += 1
+    return added_count, failed
 
 
 def _message_text(update: Update) -> str:
