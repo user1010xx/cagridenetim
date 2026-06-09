@@ -172,7 +172,6 @@ async def departmanekle_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     return DEPARTMENT_ADD_NAME
 
 
-@admin_only
 async def departmanekle_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     name = _message_text(update)
     if not name:
@@ -184,7 +183,6 @@ async def departmanekle_name(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return DEPARTMENT_ADD_COMPANY_CODE
 
 
-@admin_only
 async def departmanekle_company_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     database: Database = context.application.bot_data["database"]
     setup = context.user_data.get("department_add", {})
@@ -246,7 +244,6 @@ async def companycodeayarla_start(update: Update, context: ContextTypes.DEFAULT_
     return COMPANY_CODE_DEPARTMENT
 
 
-@admin_only
 async def companycodeayarla_department(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     database: Database = context.application.bot_data["database"]
     department = database.get_department(_identifier(_message_text(update)))
@@ -259,7 +256,6 @@ async def companycodeayarla_department(update: Update, context: ContextTypes.DEF
     return COMPANY_CODE_VALUE
 
 
-@admin_only
 async def companycodeayarla_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     database: Database = context.application.bot_data["database"]
     setup = context.user_data.get("company_code_setup", {})
@@ -285,7 +281,6 @@ async def chatayarla_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     return CHAT_DEPARTMENT
 
 
-@admin_only
 async def chatayarla_department(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     database: Database = context.application.bot_data["database"]
     department = database.get_department(_identifier(_message_text(update)))
@@ -298,7 +293,6 @@ async def chatayarla_department(update: Update, context: ContextTypes.DEFAULT_TY
     return CHAT_VALUE
 
 
-@admin_only
 async def chatayarla_value(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     database: Database = context.application.bot_data["database"]
     setup = context.user_data.get("chat_setup", {})
@@ -325,7 +319,6 @@ async def kuralayarla_start(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     return RULE_DEPARTMENT
 
 
-@admin_only
 async def kuralayarla_department(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     database: Database = context.application.bot_data["database"]
     department_name = _message_text(update)
@@ -339,7 +332,6 @@ async def kuralayarla_department(update: Update, context: ContextTypes.DEFAULT_T
     return RULE_WORK_START
 
 
-@admin_only
 async def kuralayarla_work_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         context.user_data["rule_setup"]["work_start_time"] = _optional_time_text(_message_text(update))
@@ -351,7 +343,6 @@ async def kuralayarla_work_start(update: Update, context: ContextTypes.DEFAULT_T
     return RULE_MAX_GAP
 
 
-@admin_only
 async def kuralayarla_max_gap(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     value = _message_text(update)
     if _is_blank_rule(value):
@@ -366,7 +357,6 @@ async def kuralayarla_max_gap(update: Update, context: ContextTypes.DEFAULT_TYPE
     return RULE_PRE_BREAK_LEAVE
 
 
-@admin_only
 async def kuralayarla_pre_break_leave(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         context.user_data["rule_setup"]["pre_break_leave_time"] = _optional_time_text(_message_text(update))
@@ -378,7 +368,6 @@ async def kuralayarla_pre_break_leave(update: Update, context: ContextTypes.DEFA
     return RULE_BREAK_INTERVAL
 
 
-@admin_only
 async def kuralayarla_break_interval(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     value = _message_text(update)
     if _is_blank_rule(value):
@@ -402,7 +391,6 @@ async def kuralayarla_break_interval(update: Update, context: ContextTypes.DEFAU
     return RULE_POST_BREAK_START
 
 
-@admin_only
 async def kuralayarla_post_break_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     try:
         context.user_data["rule_setup"]["post_break_start_time"] = _optional_time_text(_message_text(update))
@@ -414,7 +402,6 @@ async def kuralayarla_post_break_start(update: Update, context: ContextTypes.DEF
     return RULE_WORK_END
 
 
-@admin_only
 async def kuralayarla_work_end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     database: Database = context.application.bot_data["database"]
     setup = context.user_data.get("rule_setup", {})
@@ -470,7 +457,6 @@ async def personelekle_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return PERSONNEL_ADD_DEPARTMENT
 
 
-@admin_only
 async def personelekle_department(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     database: Database = context.application.bot_data["database"]
     department = database.get_department(_identifier(_message_text(update)))
@@ -483,7 +469,6 @@ async def personelekle_department(update: Update, context: ContextTypes.DEFAULT_
     return PERSONNEL_ADD_NAME
 
 
-@admin_only
 async def personelekle_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     name = _message_text(update)
     if not name:
@@ -495,7 +480,6 @@ async def personelekle_name(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     return PERSONNEL_ADD_EXTENSION
 
 
-@admin_only
 async def personelekle_extension(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     database: Database = context.application.bot_data["database"]
     setup = context.user_data.get("personnel_add", {})
@@ -560,7 +544,6 @@ async def izin_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return LEAVE_DEPARTMENT
 
 
-@admin_only
 async def izin_department(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     database: Database = context.application.bot_data["database"]
     department = database.get_department(_identifier(_message_text(update)))
@@ -573,7 +556,6 @@ async def izin_department(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     return LEAVE_PERSONNEL
 
 
-@admin_only
 async def izin_personnel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     database: Database = context.application.bot_data["database"]
     config: Config = context.application.bot_data["config"]
@@ -597,7 +579,6 @@ async def iziniptal_start(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     return LEAVE_CANCEL_DEPARTMENT
 
 
-@admin_only
 async def iziniptal_department(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     database: Database = context.application.bot_data["database"]
     department = database.get_department(_identifier(_message_text(update)))
@@ -610,7 +591,6 @@ async def iziniptal_department(update: Update, context: ContextTypes.DEFAULT_TYP
     return LEAVE_CANCEL_PERSONNEL
 
 
-@admin_only
 async def iziniptal_personnel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     database: Database = context.application.bot_data["database"]
     config: Config = context.application.bot_data["config"]
@@ -636,7 +616,6 @@ async def sorumluekle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     return RESPONSIBLE_ADD_DEPARTMENT
 
 
-@admin_only
 async def sorumluekle_department(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     database: Database = context.application.bot_data["database"]
     department = database.get_department(_identifier(_message_text(update)))
@@ -649,7 +628,6 @@ async def sorumluekle_department(update: Update, context: ContextTypes.DEFAULT_T
     return RESPONSIBLE_ADD_USERNAME
 
 
-@admin_only
 async def sorumluekle_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     database: Database = context.application.bot_data["database"]
     setup = context.user_data.get("responsible_add", {})
@@ -676,7 +654,6 @@ async def sorumlusil_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     return RESPONSIBLE_DELETE_DEPARTMENT
 
 
-@admin_only
 async def sorumlusil_department(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     database: Database = context.application.bot_data["database"]
     department = database.get_department(_identifier(_message_text(update)))
@@ -689,7 +666,6 @@ async def sorumlusil_department(update: Update, context: ContextTypes.DEFAULT_TY
     return RESPONSIBLE_DELETE_USERNAME
 
 
-@admin_only
 async def sorumlusil_username(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     database: Database = context.application.bot_data["database"]
     setup = context.user_data.get("responsible_delete", {})
@@ -737,7 +713,6 @@ async def haftalikizin_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
     return WEEKLY_LEAVE_DEPARTMENT
 
 
-@admin_only
 async def haftalikizin_department(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     database: Database = context.application.bot_data["database"]
     department = database.get_department(_identifier(_message_text(update)))
@@ -750,7 +725,6 @@ async def haftalikizin_department(update: Update, context: ContextTypes.DEFAULT_
     return WEEKLY_LEAVE_PERSONNEL
 
 
-@admin_only
 async def haftalikizin_personnel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     personnel_name = _message_text(update)
     if not personnel_name:
@@ -762,7 +736,6 @@ async def haftalikizin_personnel(update: Update, context: ContextTypes.DEFAULT_T
     return WEEKLY_LEAVE_DAY
 
 
-@admin_only
 async def haftalikizin_day(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     database: Database = context.application.bot_data["database"]
     setup = context.user_data.get("weekly_leave", {})
@@ -789,7 +762,6 @@ async def haftalikiziniptal_start(update: Update, context: ContextTypes.DEFAULT_
     return WEEKLY_LEAVE_CANCEL_DEPARTMENT
 
 
-@admin_only
 async def haftalikiziniptal_department(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     database: Database = context.application.bot_data["database"]
     department = database.get_department(_identifier(_message_text(update)))
@@ -802,7 +774,6 @@ async def haftalikiziniptal_department(update: Update, context: ContextTypes.DEF
     return WEEKLY_LEAVE_CANCEL_PERSONNEL
 
 
-@admin_only
 async def haftalikiziniptal_personnel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     personnel_name = _message_text(update)
     if not personnel_name:
@@ -814,7 +785,6 @@ async def haftalikiziniptal_personnel(update: Update, context: ContextTypes.DEFA
     return WEEKLY_LEAVE_CANCEL_DAY
 
 
-@admin_only
 async def haftalikiziniptal_day(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     database: Database = context.application.bot_data["database"]
     setup = context.user_data.get("weekly_leave_cancel", {})
