@@ -3,7 +3,7 @@ from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
 from bot.models import DepartmentRules, Personnel
-from bot.rules import CallRecord, evaluate_department
+from bot.rules import CallRecord, evaluate_department, normalize_calls
 
 
 TZ = ZoneInfo("Europe/Istanbul")
@@ -215,6 +215,43 @@ class RulesTest(unittest.TestCase):
             leave_periods={"ali": [(dt("11:00"), dt("19:00"))]},
         )[0]
         self.assertEqual(result.violations, [])
+
+    def test_normalize_calls_accepts_invekto_grid_fields(self) -> None:
+        records = normalize_calls(
+            [
+                {
+                    "ARAMA TARİHİ": "10/06/2026",
+                    "ARAMA SAATİ": "11:45:40",
+                    "KONUŞMA SÜRESİ": "00:00:00",
+                    "ÇALDIRMA SÜRESİ": "00:00:11",
+                    "DAHİLİ ADI": "Ali -O",
+                }
+            ],
+            TZ,
+        )
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].extension_name, "Ali")
+        self.assertEqual(records[0].duration_seconds, 11)
+
+    def test_grid_call_after_work_start_is_not_treated_as_missing_call(self) -> None:
+        records = normalize_calls(
+            [
+                {
+                    "ARAMA TARİHİ": "09/06/2026",
+                    "ARAMA SAATİ": "11:45:40",
+                    "KONUŞMA SÜRESİ": "00:00:00",
+                    "ÇALDIRMA SÜRESİ": "00:00:11",
+                    "DAHİLİ ADI": "Ali -O",
+                }
+            ],
+            TZ,
+        )
+
+        result = self.evaluate(records)
+
+        self.assertFalse(any("Mesai başlangıcı ihlali: 11:10 sonrası çağrı yok" in violation for violation in result.violations))
+        self.assertTrue(any("ilk çağrı 11:45" in violation for violation in result.violations))
 
 
 if __name__ == "__main__":

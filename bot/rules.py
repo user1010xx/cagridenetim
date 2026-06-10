@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
+from difflib import SequenceMatcher
 from zoneinfo import ZoneInfo
 
 from bot.models import DepartmentRules, Personnel
@@ -34,15 +35,17 @@ class PersonnelEvaluation:
 def normalize_calls(raw_calls: list[dict[str, object]], timezone: ZoneInfo) -> list[CallRecord]:
     records: list[CallRecord] = []
     for item in raw_calls:
-        event_type = str(item.get("EventType", "")).strip()
-        if event_type not in {"1", "2"}:
+        event_type = str(_first_value(item, "EventType", "EVENTTYPE") or "").strip()
+        if event_type and event_type not in {"1", "2"}:
             continue
-        duration = _to_int(item.get("CallTimeSecond"))
+        duration = _call_duration_seconds(item)
         if duration <= 0:
             continue
-        date_value = item.get("Date")
-        time_value = item.get("Time")
-        extension_name = str(item.get("ExtensionName") or item.get("Extension") or "Bilinmeyen").strip()
+        date_value = _first_value(item, "Date", "CallDate", "ARAMA TARİHİ", "ARAMA TARIHI")
+        time_value = _first_value(item, "Time", "CallTime", "ARAMA SAATİ", "ARAMA SAATI")
+        extension_name = _clean_extension_name(
+            _first_value(item, "ExtensionName", "Extension", "DAHİLİ ADI", "DAHILI ADI") or "Bilinmeyen"
+        )
         try:
             started_at = parse_datetime(date_value, time_value, timezone)
         except Exception:
@@ -50,11 +53,11 @@ def normalize_calls(raw_calls: list[dict[str, object]], timezone: ZoneInfo) -> l
         records.append(
             CallRecord(
                 extension_name=extension_name,
-                extension=str(item.get("Extension")).strip() if item.get("Extension") else None,
+                extension=_clean_optional_text(_first_value(item, "Extension", "Dahili", "DAHİLİ", "DAHILI")),
                 started_at=started_at,
                 duration_seconds=duration,
-                event_type=event_type,
-                call_id=str(item.get("CallID")).strip() if item.get("CallID") else None,
+                event_type=event_type or "1",
+                call_id=_clean_optional_text(_first_value(item, "CallID", "CALLID")),
             )
         )
     return sorted(records, key=lambda record: record.started_at)
@@ -425,3 +428,94 @@ def _to_int(value: object) -> int:
         return int(float(str(value or "0").replace(",", ".")))
     except ValueError:
         return 0
+
+
+def _first_value(item: dict[str, object], *keys: str) -> object | None:
+    casefolded = {str(key).strip().casefold(): value for key, value in item.items()}
+    normalized = {_normalize_key(key): value for key, value in item.items()}
+    for key in keys:
+        value = item.get(key)
+        if value is None:
+            value = casefolded.get(key.casefold())
+        if value is None:
+            value = normalized.get(_normalize_key(key))
+        if value is None:
+            value = _fuzzy_value(normalized, _normalize_key(key))
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _call_duration_seconds(item: dict[str, object]) -> int:
+    conversation_seconds = _duration_to_seconds(
+        _first_value(item, "CallTimeSecond", "CALLTIMESECOND", "KONUŞMA SÜRESİ", "KONUSMA SURESI")
+    )
+    ring_seconds = _duration_to_seconds(
+        _first_value(item, "RingTimeSecond", "RINGTIMESECOND", "ÇALDIRMA SÜRESİ", "CALDIRMA SURESI")
+    )
+    return max(conversation_seconds, ring_seconds)
+
+
+def _duration_to_seconds(value: object) -> int:
+    text = str(value or "").strip()
+    if not text:
+        return 0
+    if ":" not in text:
+        return _to_int(text)
+    parts = text.split(":")
+    if len(parts) != 3:
+        return 0
+    try:
+        hours, minutes, seconds = (int(float(part.replace(",", "."))) for part in parts)
+    except ValueError:
+        return 0
+    return hours * 3600 + minutes * 60 + seconds
+
+
+def _clean_extension_name(value: object) -> str:
+    text = str(value or "").strip()
+    if " -" in text:
+        text = text.split(" -", 1)[0].strip()
+    return text or "Bilinmeyen"
+
+
+def _clean_optional_text(value: object | None) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _normalize_key(value: object) -> str:
+    replacements = str.maketrans(
+        {
+            "ç": "c",
+            "Ç": "c",
+            "ğ": "g",
+            "Ğ": "g",
+            "ı": "i",
+            "I": "i",
+            "İ": "i",
+            "ö": "o",
+            "Ö": "o",
+            "ş": "s",
+            "Ş": "s",
+            "ü": "u",
+            "Ü": "u",
+        }
+    )
+    text = str(value).translate(replacements).casefold()
+    return "".join(character for character in text if character.isalnum())
+
+
+def _fuzzy_value(normalized: dict[str, object], target: str) -> object | None:
+    if len(target) < 6:
+        return None
+    for key, value in normalized.items():
+        if not key:
+            continue
+        if target in key:
+            return value
+        if len(key) >= 6 and SequenceMatcher(None, key, target).ratio() >= 0.78:
+            return value
+    return None
