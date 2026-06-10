@@ -23,13 +23,13 @@ class InvektoClient:
                 return results
         return results
 
-    def _fetch_call_report_for_date(self, company_code: str, report_date: str) -> list[dict[str, Any]]:
+    def _fetch_call_report_for_date(self, company_code: str, date_text: str) -> list[dict[str, Any]]:
         payload = {
             "filterType": 0,
             "callID": "",
             "companyCode": company_code,
-            "startDate": report_date,
-            "endDate": report_date,
+            "startDate": date_text,
+            "endDate": date_text,
             "reportType": 5,
         }
         body = json.dumps(payload).encode("utf-8")
