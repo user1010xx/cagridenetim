@@ -43,12 +43,31 @@ def normalize_calls(raw_calls: list[dict[str, object]], timezone: ZoneInfo) -> l
         if started_at is None:
             continue
         extension_name = _clean_extension_name(
-            _first_value(item, "ExtensionName", "DAHİLİ ADI", "DAHILI ADI", fuzzy=False) or "Bilinmeyen"
+            _first_value(
+                item,
+                "CompletedExtensionName",
+                "ExtensionName",
+                "DAHİLİ ADI",
+                "DAHILI ADI",
+                fuzzy=False,
+            )
+            or "Bilinmeyen"
         )
         records.append(
             CallRecord(
                 extension_name=extension_name,
-                extension=_clean_optional_text(_first_value(item, "Extension", "Dahili", "DAHİLİ", "DAHILI")),
+                extension=_clean_optional_text(
+                    _first_value(
+                        item,
+                        "CompletedExtension",
+                        "Extension",
+                        "Direct",
+                        "Dahili",
+                        "DAHİLİ",
+                        "DAHILI",
+                        fuzzy=False,
+                    )
+                ),
                 started_at=started_at,
                 duration_seconds=duration,
                 event_type=event_type or "1",
@@ -452,6 +471,7 @@ def _call_duration_seconds(item: dict[str, object]) -> int:
             "TalkDurationSeconds",
             "ConversationDurationSecond",
             "ConversationDurationSeconds",
+            "CallTime",
             "DurationSecond",
             "DurationSeconds",
             "Duration",
@@ -486,6 +506,7 @@ def _call_started_at(item: dict[str, object], timezone: ZoneInfo) -> datetime | 
         "BeginDate",
         "CallStartDate",
         "CreatedDate",
+        "CreateDate",
         "ARAMA TARİHİ",
         "ARAMA TARIHI",
         "TARİH",
@@ -495,11 +516,11 @@ def _call_started_at(item: dict[str, object], timezone: ZoneInfo) -> datetime | 
     time_value = _first_value(
         item,
         "Time",
-        "CallTime",
         "StartTime",
         "BeginTime",
         "CallStartTime",
         "CreatedTime",
+        "CreateTime",
         "ARAMA SAATİ",
         "ARAMA SAATI",
         "SAAT",
@@ -517,6 +538,7 @@ def _call_started_at(item: dict[str, object], timezone: ZoneInfo) -> datetime | 
         "StartDateTime",
         "BeginDateTime",
         "CreatedDateTime",
+        "CreateDateTime",
         "ARAMA ZAMANI",
         "ARAMA TARIH SAAT",
         "ARAMA TARİH SAAT",
