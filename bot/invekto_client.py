@@ -3,14 +3,21 @@ from __future__ import annotations
 import asyncio
 from datetime import date
 import json
+import socket
+import time
 from typing import Any
 from urllib import request
 
 
+class InvektoTimeoutError(RuntimeError):
+    pass
+
+
 class InvektoClient:
-    def __init__(self, api_url: str, timeout_seconds: int = 30) -> None:
+    def __init__(self, api_url: str, timeout_seconds: int = 60, max_attempts: int = 2) -> None:
         self.api_url = api_url
         self.timeout_seconds = timeout_seconds
+        self.max_attempts = max(1, max_attempts)
 
     async def fetch_call_report(self, company_code: str, report_date: date) -> list[dict[str, Any]]:
         return await asyncio.to_thread(self._fetch_call_report_sync, company_code, report_date)
@@ -45,8 +52,13 @@ class InvektoClient:
             },
             method="POST",
         )
-        with request.urlopen(api_request, timeout=self.timeout_seconds) as response:
-            raw_body = response.read().decode("utf-8-sig")
+        try:
+            raw_body = self._read_response(api_request)
+        except TimeoutError as exc:
+            raise InvektoTimeoutError(
+                f"Invekto API {self.timeout_seconds} saniye içinde yanıt vermedi. "
+                "API geçici olarak yavaş olabilir veya kayıt sayısı yüksek olabilir."
+            ) from exc
         result = json.loads(raw_body)
         if not result.get("Status"):
             message = result.get("Message") or "Invekto API isteği başarısız döndü."
@@ -55,6 +67,20 @@ class InvektoClient:
         if not isinstance(data, list):
             raise RuntimeError("Invekto API Data alanı liste formatında değil.")
         return data
+
+    def _read_response(self, api_request: request.Request) -> str:
+        last_error: TimeoutError | None = None
+        for attempt in range(1, self.max_attempts + 1):
+            try:
+                with request.urlopen(api_request, timeout=self.timeout_seconds) as response:
+                    return response.read().decode("utf-8-sig")
+            except (TimeoutError, socket.timeout) as exc:
+                last_error = exc
+                if attempt < self.max_attempts:
+                    time.sleep(1)
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("Invekto API yanıtı okunamadı.")
 
 
 def _date_texts(report_date: date) -> tuple[str, ...]:

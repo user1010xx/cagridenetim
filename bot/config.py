@@ -63,7 +63,7 @@ def load_config() -> Config:
         allowed_group_names=_parse_group_names(os.getenv("ALLOWED_GROUP_NAMES", "")),
         database_path=database_path,
         report_interval_minutes=int(os.getenv("REPORT_INTERVAL_MINUTES", "60")),
-        request_timeout_seconds=int(os.getenv("REQUEST_TIMEOUT_SECONDS", "30")),
+        request_timeout_seconds=int(os.getenv("REQUEST_TIMEOUT_SECONDS", "60")),
         scheduler_start_time=parse_hhmm(os.getenv("SCHEDULER_START_TIME", "11:30")),
         scheduler_end_time=parse_hhmm(os.getenv("SCHEDULER_END_TIME", "19:00")),
     )

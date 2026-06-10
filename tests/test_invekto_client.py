@@ -1,8 +1,8 @@
 import unittest
 from datetime import date
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from bot.invekto_client import InvektoClient
+from bot.invekto_client import InvektoClient, InvektoTimeoutError
 
 
 class InvektoClientTest(unittest.TestCase):
@@ -35,6 +35,30 @@ class InvektoClientTest(unittest.TestCase):
 
         self.assertEqual(result, [])
         self.assertEqual(fetch.call_count, 3)
+
+    def test_read_response_retries_timeout(self) -> None:
+        client = InvektoClient("https://example.invalid", timeout_seconds=60, max_attempts=2)
+        response = Mock()
+        response.read.return_value = b'{"Status": true, "Data": []}'
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=None)
+
+        with patch("bot.invekto_client.time.sleep"), patch(
+            "bot.invekto_client.request.urlopen", side_effect=[TimeoutError(), response]
+        ) as urlopen:
+            text = client._read_response(Mock())
+
+        self.assertEqual(text, '{"Status": true, "Data": []}')
+        self.assertEqual(urlopen.call_count, 2)
+
+    def test_fetch_call_report_wraps_timeout_with_clear_message(self) -> None:
+        client = InvektoClient("https://example.invalid", timeout_seconds=60, max_attempts=1)
+
+        with patch.object(client, "_read_response", side_effect=TimeoutError):
+            with self.assertRaises(InvektoTimeoutError) as error:
+                client._fetch_call_report_for_date("COMPANY", "2026-06-10")
+
+        self.assertIn("60 saniye", str(error.exception))
 
 
 if __name__ == "__main__":
