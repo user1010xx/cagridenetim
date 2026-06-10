@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from itertools import count
 from typing import Callable, Sequence
+from urllib.error import HTTPError, URLError
 
 from telegram import Update
 from telegram.constants import ParseMode
@@ -97,6 +98,7 @@ Temel komutlar:
 /personel_sil PersonelID
 /rapor - Aktif tüm departmanları kontrol eder
 /rapor DepartmanAdı veya ID - Tek departman kontrol eder
+/kontrolinvekto DepartmanAdı veya ID - Invekto erişimini test eder
 /izin - Personeli geçici izinli yapar
 /iziniptal - Geçici izni bitirir
 /haftalikizin - Haftalık izin ekler
@@ -870,6 +872,41 @@ async def rapor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await update.effective_message.reply_text(part)
 
 
+@admin_only
+async def kontrolinvekto(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    database: Database = context.application.bot_data["database"]
+    client: InvektoClient = context.application.bot_data["client"]
+    config: Config = context.application.bot_data["config"]
+    args = _plain_args(update)
+    if not args:
+        await update.effective_message.reply_text("Kullanım: /kontrolinvekto DepartmanAdı veya ID")
+        return
+    department = database.get_department(_identifier(args))
+    if department is None:
+        await update.effective_message.reply_text("Departman bulunamadı.")
+        return
+    if not department.company_code.strip():
+        await update.effective_message.reply_text("Bu departman için CompanyCode boş. Önce /companycodeayarla ile giriniz.")
+        return
+    report_date = datetime.now(config.timezone).date()
+    await update.effective_message.reply_text(f"🔎 {department.name} için Invekto erişimi test ediliyor...")
+    try:
+        calls = await client.fetch_call_report(department.company_code, report_date)
+    except HTTPError as exc:
+        message = _format_invekto_http_error(department.name, exc)
+    except URLError as exc:
+        message = f"❌ {department.name} için Invekto bağlantısı kurulamadı: {exc.reason}"
+    except TimeoutError:
+        message = f"❌ {department.name} için Invekto isteği zaman aşımına uğradı."
+    except RuntimeError as exc:
+        message = f"❌ {department.name} için Invekto yanıtı başarısız: {exc}"
+    except Exception as exc:
+        message = f"❌ {department.name} için Invekto kontrolü başarısız: {exc}"
+    else:
+        message = _format_invekto_check_success(department.name, len(calls), report_date.isoformat())
+    await update.effective_message.reply_text(message)
+
+
 async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.effective_message.reply_text("Bilinmeyen komut. /start ile komut listesini görebilirsin.")
 
@@ -933,6 +970,25 @@ def _import_personnel_rows(database: Database, rows: Sequence[PersonnelImportRow
             continue
         added_count += 1
     return added_count, failed
+
+
+def _format_invekto_check_success(department_name: str, call_count: int, report_date: str) -> str:
+    return (
+        f"✅ {department_name} için Invekto yanıt verdi.\n"
+        f"Tarih: {report_date}\n"
+        f"Kayıt sayısı: {call_count}\n"
+        "IP/CompanyCode yetkisi bu istek için uygun görünüyor."
+    )
+
+
+def _format_invekto_http_error(department_name: str, error: HTTPError) -> str:
+    if error.code in (401, 403):
+        reason = "IP whitelist, CompanyCode veya API yetkisi reddedilmiş olabilir."
+    elif error.code == 404:
+        reason = "Invekto API adresi hatalı olabilir."
+    else:
+        reason = error.reason or "HTTP hatası alındı."
+    return f"❌ {department_name} için Invekto HTTP {error.code} döndü. {reason}"
 
 
 def _message_text(update: Update) -> str:

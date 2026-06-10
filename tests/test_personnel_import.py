@@ -3,9 +3,10 @@ from io import BytesIO
 
 from openpyxl import Workbook
 
-from bot.handlers import _format_personnel_list
+from bot.handlers import _format_invekto_check_success, _format_invekto_http_error, _format_personnel_list
 from bot.models import Personnel
 from bot.personnel_import import parse_personnel_workbook
+from urllib.error import HTTPError
 
 
 class PersonnelImportTest(unittest.TestCase):
@@ -56,6 +57,20 @@ class PersonnelImportTest(unittest.TestCase):
         lines = text.splitlines()
         self.assertTrue(lines[1].startswith("1. Ayşe"))
         self.assertTrue(lines[2].startswith("2. Mehmet"))
+
+    def test_format_invekto_check_success(self) -> None:
+        text = _format_invekto_check_success("Destek", 3, "2026-06-10")
+
+        self.assertIn("✅ Destek için Invekto yanıt verdi.", text)
+        self.assertIn("Kayıt sayısı: 3", text)
+
+    def test_format_invekto_http_error_identifies_authorization_errors(self) -> None:
+        error = HTTPError("https://example.invalid", 403, "Forbidden", {}, None)
+
+        text = _format_invekto_http_error("Destek", error)
+
+        self.assertIn("HTTP 403", text)
+        self.assertIn("IP whitelist", text)
 
 
 if __name__ == "__main__":
