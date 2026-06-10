@@ -283,6 +283,24 @@ class RulesTest(unittest.TestCase):
         self.assertEqual(records[0].started_at.second, 40)
         self.assertEqual(records[0].duration_seconds, 5)
 
+    def test_normalize_calls_accepts_separate_call_start_fields(self) -> None:
+        records = normalize_calls(
+            [
+                {
+                    "CallStartDate": "2026-06-09",
+                    "CallStartTime": "11:45:40",
+                    "Duration": "00:00:05",
+                    "ExtensionName": "Ali",
+                }
+            ],
+            TZ,
+        )
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].started_at.hour, 11)
+        self.assertEqual(records[0].started_at.minute, 45)
+        self.assertEqual(records[0].started_at.second, 40)
+
     def test_normalize_calls_does_not_drop_unknown_event_type(self) -> None:
         records = normalize_calls(
             [
