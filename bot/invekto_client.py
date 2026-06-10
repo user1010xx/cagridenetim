@@ -6,10 +6,14 @@ import json
 import socket
 import time
 from typing import Any
-from urllib import request
+from urllib import error, request
 
 
 class InvektoTimeoutError(RuntimeError):
+    pass
+
+
+class InvektoConnectionError(RuntimeError):
     pass
 
 
@@ -59,6 +63,11 @@ class InvektoClient:
                 f"Invekto API {self.timeout_seconds} saniye içinde yanıt vermedi. "
                 "API geçici olarak yavaş olabilir veya kayıt sayısı yüksek olabilir."
             ) from exc
+        except (ConnectionResetError, error.URLError) as exc:
+            raise InvektoConnectionError(
+                "Invekto API bağlantıyı yarıda kapattı. "
+                "Bu genelde geçici ağ/API yoğunluğu veya sunucu tarafı bağlantı sıfırlaması anlamına gelir."
+            ) from exc
         result = json.loads(raw_body)
         if not result.get("Status"):
             message = result.get("Message") or "Invekto API isteği başarısız döndü."
@@ -69,12 +78,12 @@ class InvektoClient:
         return data
 
     def _read_response(self, api_request: request.Request) -> str:
-        last_error: TimeoutError | None = None
+        last_error: BaseException | None = None
         for attempt in range(1, self.max_attempts + 1):
             try:
                 with request.urlopen(api_request, timeout=self.timeout_seconds) as response:
                     return response.read().decode("utf-8-sig")
-            except (TimeoutError, socket.timeout) as exc:
+            except (TimeoutError, socket.timeout, ConnectionResetError, error.URLError) as exc:
                 last_error = exc
                 if attempt < self.max_attempts:
                     time.sleep(1)
