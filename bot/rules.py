@@ -6,7 +6,7 @@ from difflib import SequenceMatcher
 from zoneinfo import ZoneInfo
 
 from bot.models import DepartmentRules, Personnel
-from bot.time_utils import format_time, parse_datetime
+from bot.time_utils import format_time, parse_date, parse_datetime, parse_time
 
 
 @dataclass(frozen=True)
@@ -36,20 +36,15 @@ def normalize_calls(raw_calls: list[dict[str, object]], timezone: ZoneInfo) -> l
     records: list[CallRecord] = []
     for item in raw_calls:
         event_type = str(_first_value(item, "EventType", "EVENTTYPE") or "").strip()
-        if event_type and event_type not in {"1", "2"}:
-            continue
         duration = _call_duration_seconds(item)
         if duration <= 0:
             continue
-        date_value = _first_value(item, "Date", "CallDate", "ARAMA TARİHİ", "ARAMA TARIHI")
-        time_value = _first_value(item, "Time", "CallTime", "ARAMA SAATİ", "ARAMA SAATI")
+        started_at = _call_started_at(item, timezone)
+        if started_at is None:
+            continue
         extension_name = _clean_extension_name(
             _first_value(item, "ExtensionName", "DAHİLİ ADI", "DAHILI ADI", fuzzy=False) or "Bilinmeyen"
         )
-        try:
-            started_at = parse_datetime(date_value, time_value, timezone)
-        except Exception:
-            continue
         records.append(
             CallRecord(
                 extension_name=extension_name,
@@ -448,12 +443,115 @@ def _first_value(item: dict[str, object], *keys: str, fuzzy: bool = True) -> obj
 
 def _call_duration_seconds(item: dict[str, object]) -> int:
     conversation_seconds = _duration_to_seconds(
-        _first_value(item, "CallTimeSecond", "CALLTIMESECOND", "KONUŞMA SÜRESİ", "KONUSMA SURESI")
+        _first_value(
+            item,
+            "CallTimeSecond",
+            "CALLTIMESECOND",
+            "TalkTimeSecond",
+            "TalkDurationSecond",
+            "TalkDurationSeconds",
+            "ConversationDurationSecond",
+            "ConversationDurationSeconds",
+            "DurationSecond",
+            "DurationSeconds",
+            "Duration",
+            "KONUŞMA SÜRESİ",
+            "KONUSMA SURESI",
+            "GÖRÜŞME SÜRESİ",
+            "GORUSME SURESI",
+        )
     )
     ring_seconds = _duration_to_seconds(
-        _first_value(item, "RingTimeSecond", "RINGTIMESECOND", "ÇALDIRMA SÜRESİ", "CALDIRMA SURESI")
+        _first_value(
+            item,
+            "RingTimeSecond",
+            "RINGTIMESECOND",
+            "RingDurationSecond",
+            "RingDurationSeconds",
+            "RingDuration",
+            "RingTime",
+            "ÇALDIRMA SÜRESİ",
+            "CALDIRMA SURESI",
+        )
     )
     return conversation_seconds if conversation_seconds > 0 else ring_seconds
+
+
+def _call_started_at(item: dict[str, object], timezone: ZoneInfo) -> datetime | None:
+    date_value = _first_value(
+        item,
+        "Date",
+        "CallDate",
+        "StartDate",
+        "BeginDate",
+        "CreatedDate",
+        "ARAMA TARİHİ",
+        "ARAMA TARIHI",
+        "TARİH",
+        "TARIH",
+        fuzzy=False,
+    )
+    time_value = _first_value(
+        item,
+        "Time",
+        "CallTime",
+        "StartTime",
+        "BeginTime",
+        "CreatedTime",
+        "ARAMA SAATİ",
+        "ARAMA SAATI",
+        "SAAT",
+        fuzzy=False,
+    )
+    if date_value is not None and time_value is not None:
+        try:
+            return parse_datetime(date_value, time_value, timezone)
+        except Exception:
+            pass
+    combined_value = _first_value(
+        item,
+        "DateTime",
+        "CallDateTime",
+        "StartDateTime",
+        "BeginDateTime",
+        "CreatedDateTime",
+        "CallStartDate",
+        "CallStartTime",
+        "StartTime",
+        "ARAMA ZAMANI",
+        "ARAMA TARIH SAAT",
+        "ARAMA TARİH SAAT",
+        fuzzy=False,
+    )
+    if combined_value is None:
+        return None
+    return _parse_combined_datetime(combined_value, timezone)
+
+
+def _parse_combined_datetime(value: object, timezone: ZoneInfo) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    normalized = text.replace("T", " ").replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        parsed = None
+    if parsed is None:
+        for separator in (" ", "  "):
+            if separator not in text:
+                continue
+            date_text, time_text = text.split(separator, 1)
+            try:
+                parsed = datetime.combine(parse_date(date_text), parse_time(time_text))
+                break
+            except Exception:
+                pass
+    if parsed is None:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone)
+    return parsed.astimezone(timezone)
 
 
 def _duration_to_seconds(value: object) -> int:

@@ -47,10 +47,17 @@ async def generate_department_report(
         now=now,
         raw_call_count=len(raw_calls),
         processed_call_count=len(calls),
+        raw_call_sample_keys=_raw_call_sample_keys(raw_calls),
         personnel=personnel,
         responsibles=responsibles,
     )
     return department.telegram_chat_id, message
+
+
+def _raw_call_sample_keys(raw_calls: list[dict[str, object]]) -> list[str]:
+    if not raw_calls or not isinstance(raw_calls[0], dict):
+        return []
+    return [str(key) for key in raw_calls[0].keys()]
 
 
 def _load_leave_periods(database: Database, department_id: int, report_date: date, timezone) -> dict[str, list[tuple[datetime, datetime | None]]]:

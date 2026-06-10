@@ -6,7 +6,7 @@ from openpyxl import Workbook
 from bot.handlers import _format_invekto_check_success, _format_invekto_http_error, _format_personnel_list
 from bot.models import Personnel
 from bot.personnel_import import parse_personnel_workbook
-from bot.reporting import _call_count_text
+from bot.reporting import build_department_report, _call_count_text
 from urllib.error import HTTPError
 
 
@@ -77,6 +77,27 @@ class PersonnelImportTest(unittest.TestCase):
         text = _call_count_text(10, 3)
 
         self.assertEqual(text, "☎️ API görüşme kaydı: 10 | işlenen: 3")
+
+    def test_report_shows_sample_keys_when_raw_calls_are_not_processed(self) -> None:
+        from datetime import date, datetime, time
+        from zoneinfo import ZoneInfo
+
+        from bot.models import Department, DepartmentRules
+
+        text = build_department_report(
+            department=Department(1, "Destek", "COMPANY", "CHAT", True),
+            rules=DepartmentRules(1, time(11, 10), None, None, None, None, None, 15),
+            evaluations=[],
+            report_date=date(2026, 6, 10),
+            now=datetime(2026, 6, 10, 12, 0, tzinfo=ZoneInfo("Europe/Istanbul")),
+            raw_call_count=5,
+            processed_call_count=0,
+            raw_call_sample_keys=["Date", "Time", "Duration"],
+            personnel=[],
+        )
+
+        self.assertIn("API veri döndü ama bot işleyemedi", text)
+        self.assertIn("Date, Time, Duration", text)
 
 
 if __name__ == "__main__":

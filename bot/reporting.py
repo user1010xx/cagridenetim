@@ -7,6 +7,9 @@ from bot.rules import PersonnelEvaluation
 from bot.time_utils import format_time
 
 
+MAX_DEBUG_KEYS = 12
+
+
 def build_department_report(
     department: Department,
     rules: DepartmentRules,
@@ -17,6 +20,7 @@ def build_department_report(
     personnel: list[Personnel],
     responsibles: list[DepartmentResponsible] | None = None,
     processed_call_count: int | None = None,
+    raw_call_sample_keys: list[str] | None = None,
 ) -> str:
     violation_count = sum(len(evaluation.violations) for evaluation in evaluations)
     ok_count = sum(1 for evaluation in evaluations if not evaluation.violations)
@@ -28,6 +32,14 @@ def build_department_report(
         _call_count_text(raw_call_count, processed_call_count),
         "",
     ]
+    if raw_call_count and processed_call_count == 0 and raw_call_sample_keys:
+        lines.extend(
+            [
+                "⚠️ API veri döndü ama bot işleyemedi.",
+                f"Örnek API alanları: {', '.join(raw_call_sample_keys[:MAX_DEBUG_KEYS])}",
+                "",
+            ]
+        )
     if responsibles:
         mentions = " ".join(f"@{responsible.username}" for responsible in responsibles)
         lines.append(f"👥 Sorumlular: {mentions}")

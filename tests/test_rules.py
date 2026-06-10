@@ -265,6 +265,41 @@ class RulesTest(unittest.TestCase):
 
         self.assertEqual(records[0].duration_seconds, 65)
 
+    def test_normalize_calls_accepts_combined_datetime_and_duration_fields(self) -> None:
+        records = normalize_calls(
+            [
+                {
+                    "CallDateTime": "2026-06-09T11:45:40",
+                    "Duration": "00:00:05",
+                    "ExtensionName": "Ali",
+                }
+            ],
+            TZ,
+        )
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].started_at.hour, 11)
+        self.assertEqual(records[0].started_at.minute, 45)
+        self.assertEqual(records[0].started_at.second, 40)
+        self.assertEqual(records[0].duration_seconds, 5)
+
+    def test_normalize_calls_does_not_drop_unknown_event_type(self) -> None:
+        records = normalize_calls(
+            [
+                {
+                    "Date": "2026-06-09",
+                    "Time": "11:45:40",
+                    "CallTimeSecond": "5",
+                    "ExtensionName": "Ali",
+                    "EventType": "Conversation",
+                }
+            ],
+            TZ,
+        )
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].event_type, "Conversation")
+
     def test_normalize_calls_does_not_use_extension_number_as_name(self) -> None:
         records = normalize_calls(
             [
