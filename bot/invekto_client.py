@@ -16,12 +16,20 @@ class InvektoClient:
         return await asyncio.to_thread(self._fetch_call_report_sync, company_code, report_date)
 
     def _fetch_call_report_sync(self, company_code: str, report_date: date) -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
+        for date_text in _date_texts(report_date):
+            results = self._fetch_call_report_for_date(company_code, date_text)
+            if results:
+                return results
+        return results
+
+    def _fetch_call_report_for_date(self, company_code: str, report_date: str) -> list[dict[str, Any]]:
         payload = {
             "filterType": 0,
             "callID": "",
             "companyCode": company_code,
-            "startDate": report_date.isoformat(),
-            "endDate": report_date.isoformat(),
+            "startDate": report_date,
+            "endDate": report_date,
             "reportType": 5,
         }
         body = json.dumps(payload).encode("utf-8")
@@ -31,6 +39,8 @@ class InvektoClient:
             headers={
                 "Content-Type": "application/json",
                 "Accept": "application/json",
+                "Cache-Control": "no-cache",
+                "Pragma": "no-cache",
                 "User-Agent": "invekto-kalite-kontrol-bot/1.0",
             },
             method="POST",
@@ -45,3 +55,11 @@ class InvektoClient:
         if not isinstance(data, list):
             raise RuntimeError("Invekto API Data alanı liste formatında değil.")
         return data
+
+
+def _date_texts(report_date: date) -> tuple[str, ...]:
+    return (
+        report_date.isoformat(),
+        report_date.strftime("%d.%m.%Y"),
+        report_date.strftime("%d/%m/%Y"),
+    )

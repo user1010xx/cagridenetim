@@ -6,6 +6,7 @@ from openpyxl import Workbook
 from bot.handlers import _format_invekto_check_success, _format_invekto_http_error, _format_personnel_list
 from bot.models import Personnel
 from bot.personnel_import import parse_personnel_workbook
+from bot.reporting import _call_count_text
 from urllib.error import HTTPError
 
 
@@ -71,6 +72,11 @@ class PersonnelImportTest(unittest.TestCase):
 
         self.assertIn("HTTP 403", text)
         self.assertIn("IP whitelist", text)
+
+    def test_call_count_text_shows_raw_and_processed_counts(self) -> None:
+        text = _call_count_text(10, 3)
+
+        self.assertEqual(text, "☎️ API görüşme kaydı: 10 | işlenen: 3")
 
 
 if __name__ == "__main__":

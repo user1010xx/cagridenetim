@@ -16,6 +16,7 @@ def build_department_report(
     raw_call_count: int,
     personnel: list[Personnel],
     responsibles: list[DepartmentResponsible] | None = None,
+    processed_call_count: int | None = None,
 ) -> str:
     violation_count = sum(len(evaluation.violations) for evaluation in evaluations)
     ok_count = sum(1 for evaluation in evaluations if not evaluation.violations)
@@ -24,7 +25,7 @@ def build_department_report(
         f"🏢 Departman: {department.name}",
         f"📅 Tarih: {report_date.strftime('%d.%m.%Y')} | ⏰ Kontrol: {now.strftime('%H:%M')}",
         f"⚙️ Kurallar: {_rules_summary(rules)}",
-        f"☎️ API görüşme kaydı: {raw_call_count}",
+        _call_count_text(raw_call_count, processed_call_count),
         "",
     ]
     if responsibles:
@@ -83,6 +84,12 @@ def _format_optional_time(value) -> str:
 
 def _format_optional_minutes(value: int | None) -> str:
     return f"{value} dk" if value is not None else "kapalı"
+
+
+def _call_count_text(raw_call_count: int, processed_call_count: int | None) -> str:
+    if processed_call_count is None or processed_call_count == raw_call_count:
+        return f"☎️ API görüşme kaydı: {raw_call_count}"
+    return f"☎️ API görüşme kaydı: {raw_call_count} | işlenen: {processed_call_count}"
 
 
 def split_telegram_message(message: str, limit: int = 3900) -> list[str]:

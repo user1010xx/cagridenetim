@@ -45,7 +45,8 @@ async def generate_department_report(
         evaluations=evaluations,
         report_date=report_date,
         now=now,
-        raw_call_count=len(calls),
+        raw_call_count=len(raw_calls),
+        processed_call_count=len(calls),
         personnel=personnel,
         responsibles=responsibles,
     )
