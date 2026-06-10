@@ -234,6 +234,53 @@ class RulesTest(unittest.TestCase):
         self.assertEqual(records[0].extension_name, "Ali")
         self.assertEqual(records[0].duration_seconds, 11)
 
+    def test_normalize_calls_prefers_talk_duration_over_ring_duration(self) -> None:
+        records = normalize_calls(
+            [
+                {
+                    "Date": "2026-06-09",
+                    "Time": "11:45:40",
+                    "CallTimeSecond": "5",
+                    "RingTimeSecond": "20",
+                    "ExtensionName": "Ali",
+                }
+            ],
+            TZ,
+        )
+
+        self.assertEqual(records[0].duration_seconds, 5)
+
+    def test_normalize_calls_accepts_minute_second_duration(self) -> None:
+        records = normalize_calls(
+            [
+                {
+                    "Date": "2026-06-09",
+                    "Time": "11:45:40",
+                    "CallTimeSecond": "01:05",
+                    "ExtensionName": "Ali",
+                }
+            ],
+            TZ,
+        )
+
+        self.assertEqual(records[0].duration_seconds, 65)
+
+    def test_normalize_calls_does_not_use_extension_number_as_name(self) -> None:
+        records = normalize_calls(
+            [
+                {
+                    "Date": "2026-06-09",
+                    "Time": "11:45:40",
+                    "CallTimeSecond": "5",
+                    "Extension": "1001",
+                }
+            ],
+            TZ,
+        )
+
+        self.assertEqual(records[0].extension_name, "Bilinmeyen")
+        self.assertEqual(records[0].extension, "1001")
+
     def test_grid_call_after_work_start_is_not_treated_as_missing_call(self) -> None:
         records = normalize_calls(
             [

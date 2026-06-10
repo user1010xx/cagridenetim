@@ -44,7 +44,7 @@ def normalize_calls(raw_calls: list[dict[str, object]], timezone: ZoneInfo) -> l
         date_value = _first_value(item, "Date", "CallDate", "ARAMA TARİHİ", "ARAMA TARIHI")
         time_value = _first_value(item, "Time", "CallTime", "ARAMA SAATİ", "ARAMA SAATI")
         extension_name = _clean_extension_name(
-            _first_value(item, "ExtensionName", "Extension", "DAHİLİ ADI", "DAHILI ADI") or "Bilinmeyen"
+            _first_value(item, "ExtensionName", "DAHİLİ ADI", "DAHILI ADI", fuzzy=False) or "Bilinmeyen"
         )
         try:
             started_at = parse_datetime(date_value, time_value, timezone)
@@ -430,7 +430,7 @@ def _to_int(value: object) -> int:
         return 0
 
 
-def _first_value(item: dict[str, object], *keys: str) -> object | None:
+def _first_value(item: dict[str, object], *keys: str, fuzzy: bool = True) -> object | None:
     casefolded = {str(key).strip().casefold(): value for key, value in item.items()}
     normalized = {_normalize_key(key): value for key, value in item.items()}
     for key in keys:
@@ -439,7 +439,7 @@ def _first_value(item: dict[str, object], *keys: str) -> object | None:
             value = casefolded.get(key.casefold())
         if value is None:
             value = normalized.get(_normalize_key(key))
-        if value is None:
+        if value is None and fuzzy:
             value = _fuzzy_value(normalized, _normalize_key(key))
         if value not in (None, ""):
             return value
@@ -453,7 +453,7 @@ def _call_duration_seconds(item: dict[str, object]) -> int:
     ring_seconds = _duration_to_seconds(
         _first_value(item, "RingTimeSecond", "RINGTIMESECOND", "ÇALDIRMA SÜRESİ", "CALDIRMA SURESI")
     )
-    return max(conversation_seconds, ring_seconds)
+    return conversation_seconds if conversation_seconds > 0 else ring_seconds
 
 
 def _duration_to_seconds(value: object) -> int:
@@ -463,12 +463,16 @@ def _duration_to_seconds(value: object) -> int:
     if ":" not in text:
         return _to_int(text)
     parts = text.split(":")
-    if len(parts) != 3:
+    if len(parts) not in (2, 3):
         return 0
     try:
-        hours, minutes, seconds = (int(float(part.replace(",", "."))) for part in parts)
+        values = [int(float(part.replace(",", "."))) for part in parts]
     except ValueError:
         return 0
+    if len(values) == 2:
+        minutes, seconds = values
+        return minutes * 60 + seconds
+    hours, minutes, seconds = values
     return hours * 3600 + minutes * 60 + seconds
 
 
@@ -511,11 +515,16 @@ def _normalize_key(value: object) -> str:
 def _fuzzy_value(normalized: dict[str, object], target: str) -> object | None:
     if len(target) < 6:
         return None
+    best_value: object | None = None
+    best_score = 0.0
     for key, value in normalized.items():
         if not key:
             continue
         if target in key:
             return value
-        if len(key) >= 6 and SequenceMatcher(None, key, target).ratio() >= 0.78:
-            return value
-    return None
+        if len(key) >= 6:
+            score = SequenceMatcher(None, key, target).ratio()
+            if score >= 0.78 and score > best_score:
+                best_value = value
+                best_score = score
+    return best_value
