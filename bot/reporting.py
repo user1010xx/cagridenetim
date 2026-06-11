@@ -69,7 +69,7 @@ def build_department_report(
                 lines.append(f"   • {violation}")
         lines.append("")
 
-    ok_people = [] if new_violations_only else [evaluation for evaluation in evaluations if not evaluation.violations]
+    ok_people = [] if new_violations_only and violation_count else [evaluation for evaluation in evaluations if not evaluation.violations]
     if ok_people:
         lines.append("✅ Uygun Personeller")
         for evaluation in ok_people:

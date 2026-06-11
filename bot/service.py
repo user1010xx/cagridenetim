@@ -79,8 +79,7 @@ async def generate_department_report_payload(
         responsibles=responsibles,
         new_violations_only=suppress_notified,
     )
-    has_processing_warning = bool(raw_calls) and not calls
-    should_send = not suppress_notified or bool(notification_violations) or has_processing_warning
+    should_send = True
     return DepartmentReport(department.telegram_chat_id, message, notification_violations, should_send)
 
 

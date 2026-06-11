@@ -126,7 +126,7 @@ class PersonnelImportTest(unittest.TestCase):
         self.assertNotIn("Uygun Personeller", text)
         self.assertNotIn("Mehmet", text)
 
-    def test_report_new_violations_only_explains_empty_result(self) -> None:
+    def test_report_new_violations_only_shows_ok_people_when_no_new_violations(self) -> None:
         from datetime import date, datetime, time
         from zoneinfo import ZoneInfo
 
@@ -147,6 +147,8 @@ class PersonnelImportTest(unittest.TestCase):
 
         self.assertIn("0 yeni ihlal", text)
         self.assertIn("Yeni ihlal yok", text)
+        self.assertIn("Uygun Personeller", text)
+        self.assertIn("Ayşe", text)
 
 
 if __name__ == "__main__":
