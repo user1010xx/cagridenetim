@@ -443,7 +443,7 @@ class Database:
         self,
         department_id: int,
         report_date: str,
-        violations: list[tuple[str, str]],
+        violations: list[tuple[str, str]] | tuple[tuple[str, str], ...],
     ) -> None:
         if not violations:
             return

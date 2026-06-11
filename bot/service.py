@@ -15,7 +15,7 @@ from bot.rules import evaluate_department, normalize_calls
 class DepartmentReport:
     chat_id: str
     message: str
-    notification_violations: list[tuple[str, str]]
+    notification_violations: tuple[tuple[str, str], ...]
     should_send: bool
 
 
@@ -28,10 +28,6 @@ async def generate_department_report(
     suppress_notified: bool = False,
 ) -> tuple[str, str]:
     report = await generate_department_report_payload(database, client, department_identifier, report_date, now, suppress_notified)
-    if suppress_notified:
-        department = database.get_department(department_identifier)
-        if department is not None:
-            database.mark_notified_violations(department.id, report_date.isoformat(), report.notification_violations)
     return report.chat_id, report.message
 
 
@@ -69,7 +65,7 @@ async def generate_department_report_payload(
     )
     notified_violations = database.list_notified_violations(department.id, report_date.isoformat()) if suppress_notified else set()
     report_evaluations = _filter_notified_violations(evaluations, notified_violations)
-    notification_violations = _violation_keys(report_evaluations) if suppress_notified else []
+    notification_violations = tuple(_violation_keys(report_evaluations)) if suppress_notified else ()
     message = build_department_report(
         department=department,
         rules=rules,
@@ -93,7 +89,7 @@ def _filter_notified_violations(
     notified_violations: set[tuple[str, str]],
 ) -> list[PersonnelEvaluation]:
     if not notified_violations:
-        return evaluations
+        return list(evaluations)
     filtered: list[PersonnelEvaluation] = []
     for evaluation in evaluations:
         next_evaluation = copy(evaluation)
@@ -110,13 +106,14 @@ def _filter_notified_violations(
 
 def _violation_keys(evaluations: list[PersonnelEvaluation]) -> list[tuple[str, str]]:
     return [
-        (evaluation.name, _violation_key(violation))
+        (evaluation.name.casefold(), _violation_key(violation))
         for evaluation in evaluations
         for violation in evaluation.violations
     ]
 
 
 def _violation_key(violation: str) -> str:
+    # Dinamik değer içeren yeni ihlal mesajları eklenirse bu anahtar normalizasyonu genişletilmelidir.
     if violation.casefold().startswith("güncel bekleme ihlali:"):
         return "güncel bekleme ihlali"
     return " ".join(violation.casefold().split())

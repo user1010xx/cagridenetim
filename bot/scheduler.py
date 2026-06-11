@@ -56,11 +56,20 @@ async def send_scheduled_reports(application: Application) -> None:
                 logger.info("Yeni ihlal yok, zamanlanmış rapor gönderilmedi: %s", department.name)
                 continue
             for part in split_telegram_message(message):
-                await application.bot.send_message(chat_id=chat_id, text=part)
+                await _send_message_with_retry(application, chat_id, part)
             if report is not None and report.notification_violations:
                 database.mark_notified_violations(department.id, now.date().isoformat(), report.notification_violations)
         except Exception:
             logger.exception("Zamanlanmış rapor gönderilemedi: %s", department.name)
+
+
+async def _send_message_with_retry(application: Application, chat_id: str, text: str) -> None:
+    try:
+        await application.bot.send_message(chat_id=chat_id, text=text)
+    except Exception:
+        logger.warning("Telegram mesaj parçası gönderilemedi, tekrar deneniyor.", exc_info=True)
+        await asyncio.sleep(1)
+        await application.bot.send_message(chat_id=chat_id, text=text)
 
 
 def _seconds_until_next_run(config: Config) -> float:

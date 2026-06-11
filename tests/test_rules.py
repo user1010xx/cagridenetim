@@ -402,7 +402,7 @@ class RulesTest(unittest.TestCase):
             )
         ]
 
-        self.assertEqual(_violation_keys(evaluations), [("Ayşe", "mesai başlangıcı i̇hlali")])
+        self.assertEqual(_violation_keys(evaluations), [("ayşe", "mesai başlangıcı i̇hlali")])
 
     def test_current_idle_violation_key_ignores_elapsed_minutes(self) -> None:
         evaluations = [
@@ -418,7 +418,7 @@ class RulesTest(unittest.TestCase):
 
         self.assertEqual(
             _violation_keys(evaluations),
-            [("Ayşe", "güncel bekleme ihlali"), ("Ayşe", "güncel bekleme ihlali")],
+            [("ayşe", "güncel bekleme ihlali"), ("ayşe", "güncel bekleme ihlali")],
         )
 
 if __name__ == "__main__":
