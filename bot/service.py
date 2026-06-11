@@ -1,11 +1,22 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime
+from copy import copy
 
 from bot.database import Database
 from bot.invekto_client import InvektoClient
 from bot.reporting import build_department_report
+from bot.rules import PersonnelEvaluation
 from bot.rules import evaluate_department, normalize_calls
+
+
+@dataclass(frozen=True)
+class DepartmentReport:
+    chat_id: str
+    message: str
+    notification_violations: list[tuple[str, str]]
+    should_send: bool
 
 
 async def generate_department_report(
@@ -14,7 +25,24 @@ async def generate_department_report(
     department_identifier: str | int,
     report_date: date,
     now: datetime,
+    suppress_notified: bool = False,
 ) -> tuple[str, str]:
+    report = await generate_department_report_payload(database, client, department_identifier, report_date, now, suppress_notified)
+    if suppress_notified:
+        department = database.get_department(department_identifier)
+        if department is not None:
+            database.mark_notified_violations(department.id, report_date.isoformat(), report.notification_violations)
+    return report.chat_id, report.message
+
+
+async def generate_department_report_payload(
+    database: Database,
+    client: InvektoClient,
+    department_identifier: str | int,
+    report_date: date,
+    now: datetime,
+    suppress_notified: bool = False,
+) -> DepartmentReport:
     department = database.get_department(department_identifier)
     if department is None:
         raise ValueError("Departman bulunamadı.")
@@ -39,10 +67,13 @@ async def generate_department_report(
         leave_periods=leave_periods,
         weekly_leave_names=weekly_leave_names,
     )
+    notified_violations = database.list_notified_violations(department.id, report_date.isoformat()) if suppress_notified else set()
+    report_evaluations = _filter_notified_violations(evaluations, notified_violations)
+    notification_violations = _violation_keys(report_evaluations) if suppress_notified else []
     message = build_department_report(
         department=department,
         rules=rules,
-        evaluations=evaluations,
+        evaluations=report_evaluations,
         report_date=report_date,
         now=now,
         raw_call_count=len(raw_calls),
@@ -50,8 +81,45 @@ async def generate_department_report(
         raw_call_sample_keys=_raw_call_sample_keys(raw_calls),
         personnel=personnel,
         responsibles=responsibles,
+        new_violations_only=suppress_notified,
     )
-    return department.telegram_chat_id, message
+    has_processing_warning = bool(raw_calls) and not calls
+    should_send = not suppress_notified or bool(notification_violations) or has_processing_warning
+    return DepartmentReport(department.telegram_chat_id, message, notification_violations, should_send)
+
+
+def _filter_notified_violations(
+    evaluations: list[PersonnelEvaluation],
+    notified_violations: set[tuple[str, str]],
+) -> list[PersonnelEvaluation]:
+    if not notified_violations:
+        return evaluations
+    filtered: list[PersonnelEvaluation] = []
+    for evaluation in evaluations:
+        next_evaluation = copy(evaluation)
+        next_evaluation.calls = list(evaluation.calls)
+        next_evaluation.leave_periods = list(evaluation.leave_periods)
+        next_evaluation.violations = [
+            violation
+            for violation in evaluation.violations
+            if (evaluation.name.casefold(), _violation_key(violation)) not in notified_violations
+        ]
+        filtered.append(next_evaluation)
+    return filtered
+
+
+def _violation_keys(evaluations: list[PersonnelEvaluation]) -> list[tuple[str, str]]:
+    return [
+        (evaluation.name, _violation_key(violation))
+        for evaluation in evaluations
+        for violation in evaluation.violations
+    ]
+
+
+def _violation_key(violation: str) -> str:
+    if violation.casefold().startswith("güncel bekleme ihlali:"):
+        return "güncel bekleme ihlali"
+    return " ".join(violation.casefold().split())
 
 
 def _raw_call_sample_keys(raw_calls: list[dict[str, object]]) -> list[str]:

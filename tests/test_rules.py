@@ -3,7 +3,8 @@ from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
 from bot.models import DepartmentRules, Personnel
-from bot.rules import CallRecord, evaluate_department, normalize_calls
+from bot.rules import CallRecord, PersonnelEvaluation, evaluate_department, normalize_calls
+from bot.service import _filter_notified_violations, _violation_keys
 
 
 TZ = ZoneInfo("Europe/Istanbul")
@@ -378,6 +379,47 @@ class RulesTest(unittest.TestCase):
         self.assertFalse(any("Mesai başlangıcı ihlali: 11:10 sonrası çağrı yok" in violation for violation in result.violations))
         self.assertTrue(any("ilk çağrı 11:45" in violation for violation in result.violations))
 
+    def test_filter_notified_violations_keeps_only_new_violations(self) -> None:
+        evaluations = [
+            PersonnelEvaluation(
+                name="Ayşe",
+                extension="1001",
+                violations=["Mesai başlangıcı ihlali", "Güncel bekleme ihlali"],
+            )
+        ]
+
+        filtered = _filter_notified_violations(evaluations, {("ayşe", "mesai başlangıcı ihlali")})
+
+        self.assertEqual(filtered[0].violations, ["Güncel bekleme ihlali"])
+        self.assertEqual(evaluations[0].violations, ["Mesai başlangıcı ihlali", "Güncel bekleme ihlali"])
+
+    def test_violation_keys_are_normalized(self) -> None:
+        evaluations = [
+            PersonnelEvaluation(
+                name="Ayşe",
+                extension="1001",
+                violations=["  Mesai   Başlangıcı İhlali  "],
+            )
+        ]
+
+        self.assertEqual(_violation_keys(evaluations), [("Ayşe", "mesai başlangıcı i̇hlali")])
+
+    def test_current_idle_violation_key_ignores_elapsed_minutes(self) -> None:
+        evaluations = [
+            PersonnelEvaluation(
+                name="Ayşe",
+                extension="1001",
+                violations=[
+                    "Güncel bekleme ihlali: son çağrı 11:25 sonrası 95 dk bekleme var (limit 15 dk)",
+                    "Güncel bekleme ihlali: son çağrı 11:25 sonrası 155 dk bekleme var (limit 15 dk)",
+                ],
+            )
+        ]
+
+        self.assertEqual(
+            _violation_keys(evaluations),
+            [("Ayşe", "güncel bekleme ihlali"), ("Ayşe", "güncel bekleme ihlali")],
+        )
 
 if __name__ == "__main__":
     unittest.main()

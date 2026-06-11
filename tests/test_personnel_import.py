@@ -99,6 +99,55 @@ class PersonnelImportTest(unittest.TestCase):
         self.assertIn("API veri döndü ama bot işleyemedi", text)
         self.assertIn("Date, Time, Duration", text)
 
+    def test_report_new_violations_only_hides_ok_people(self) -> None:
+        from datetime import date, datetime, time
+        from zoneinfo import ZoneInfo
+
+        from bot.models import Department, DepartmentRules
+        from bot.rules import PersonnelEvaluation
+
+        text = build_department_report(
+            department=Department(1, "Destek", "COMPANY", "CHAT", True),
+            rules=DepartmentRules(1, time(11, 10), None, None, None, None, None, 15),
+            evaluations=[
+                PersonnelEvaluation(name="Ayşe", extension="1001", violations=["Yeni ihlal"]),
+                PersonnelEvaluation(name="Mehmet", extension="1002", violations=[]),
+            ],
+            report_date=date(2026, 6, 10),
+            now=datetime(2026, 6, 10, 12, 0, tzinfo=ZoneInfo("Europe/Istanbul")),
+            raw_call_count=5,
+            processed_call_count=5,
+            personnel=[],
+            new_violations_only=True,
+        )
+
+        self.assertIn("1 yeni ihlal", text)
+        self.assertIn("Ayşe", text)
+        self.assertNotIn("Uygun Personeller", text)
+        self.assertNotIn("Mehmet", text)
+
+    def test_report_new_violations_only_explains_empty_result(self) -> None:
+        from datetime import date, datetime, time
+        from zoneinfo import ZoneInfo
+
+        from bot.models import Department, DepartmentRules
+        from bot.rules import PersonnelEvaluation
+
+        text = build_department_report(
+            department=Department(1, "Destek", "COMPANY", "CHAT", True),
+            rules=DepartmentRules(1, time(11, 10), None, None, None, None, None, 15),
+            evaluations=[PersonnelEvaluation(name="Ayşe", extension="1001", violations=[])],
+            report_date=date(2026, 6, 10),
+            now=datetime(2026, 6, 10, 12, 0, tzinfo=ZoneInfo("Europe/Istanbul")),
+            raw_call_count=5,
+            processed_call_count=5,
+            personnel=[],
+            new_violations_only=True,
+        )
+
+        self.assertIn("0 yeni ihlal", text)
+        self.assertIn("Yeni ihlal yok", text)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -106,6 +106,20 @@ class Database:
                 )
                 """
             )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS notified_violations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    department_id INTEGER NOT NULL,
+                    report_date TEXT NOT NULL,
+                    personnel_name TEXT NOT NULL,
+                    violation_key TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE (department_id, report_date, personnel_name, violation_key),
+                    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE
+                )
+                """
+            )
 
     def add_department(self, name: str, company_code: str, telegram_chat_id: str) -> Department:
         with self.connect() as connection:
@@ -412,6 +426,43 @@ class Database:
             )
             for row in rows
         ]
+
+    def list_notified_violations(self, department_id: int, report_date: str) -> set[tuple[str, str]]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT personnel_name, violation_key
+                FROM notified_violations
+                WHERE department_id = ? AND report_date = ?
+                """,
+                (department_id, report_date),
+            ).fetchall()
+        return {(str(row["personnel_name"]).casefold(), str(row["violation_key"])) for row in rows}
+
+    def mark_notified_violations(
+        self,
+        department_id: int,
+        report_date: str,
+        violations: list[tuple[str, str]],
+    ) -> None:
+        if not violations:
+            return
+        with self.connect() as connection:
+            connection.executemany(
+                """
+                INSERT OR IGNORE INTO notified_violations (
+                    department_id,
+                    report_date,
+                    personnel_name,
+                    violation_key
+                )
+                VALUES (?, ?, ?, ?)
+                """,
+                [
+                    (department_id, report_date, personnel_name.casefold(), violation_key)
+                    for personnel_name, violation_key in violations
+                ],
+            )
 
     @staticmethod
     def _department_from_row(row: sqlite3.Row) -> Department:

@@ -21,6 +21,7 @@ def build_department_report(
     responsibles: list[DepartmentResponsible] | None = None,
     processed_call_count: int | None = None,
     raw_call_sample_keys: list[str] | None = None,
+    new_violations_only: bool = False,
 ) -> str:
     violation_count = sum(len(evaluation.violations) for evaluation in evaluations)
     ok_count = sum(1 for evaluation in evaluations if not evaluation.violations)
@@ -51,7 +52,10 @@ def build_department_report(
                 "",
             ]
         )
-    lines.append(f"Özet: {'❌' if violation_count else '✅'} {violation_count} ihlal | ✅ {ok_count} uygun personel")
+    if new_violations_only:
+        lines.append(f"Özet: {'❌' if violation_count else '✅'} {violation_count} yeni ihlal")
+    else:
+        lines.append(f"Özet: {'❌' if violation_count else '✅'} {violation_count} ihlal | ✅ {ok_count} uygun personel")
     lines.append("")
 
     if violation_count:
@@ -65,14 +69,16 @@ def build_department_report(
                 lines.append(f"   • {violation}")
         lines.append("")
 
-    ok_people = [evaluation for evaluation in evaluations if not evaluation.violations]
+    ok_people = [] if new_violations_only else [evaluation for evaluation in evaluations if not evaluation.violations]
     if ok_people:
         lines.append("✅ Uygun Personeller")
         for evaluation in ok_people:
             extension_text = f" ({evaluation.extension})" if evaluation.extension else ""
             lines.append(f"   • {evaluation.name}{extension_text} - {len(evaluation.calls)} çağrı")
 
-    if not evaluations:
+    if new_violations_only and not violation_count:
+        lines.append("✅ Yeni ihlal yok. Önceden bildirilen ihlaller tekrar gönderilmedi.")
+    elif not evaluations:
         lines.append("⚠️ Kontrol edilecek personel veya çağrı kaydı bulunamadı.")
 
     return "\n".join(lines)

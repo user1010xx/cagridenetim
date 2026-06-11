@@ -60,6 +60,26 @@ class DatabaseMigrationTest(unittest.TestCase):
         finally:
             os.remove(path)
 
+    def test_notified_violations_are_deduplicated(self) -> None:
+        fd, path = tempfile.mkstemp(suffix=".sqlite3")
+        os.close(fd)
+        try:
+            database = Database(path)
+            department = database.add_department("Destek", "COMPANY", "CHAT")
+
+            database.mark_notified_violations(
+                department.id,
+                "2026-06-10",
+                [("Ayşe", "mesai ihlali"), ("Ayşe", "mesai ihlali")],
+            )
+
+            self.assertEqual(
+                database.list_notified_violations(department.id, "2026-06-10"),
+                {("ayşe", "mesai ihlali")},
+            )
+        finally:
+            os.remove(path)
+
 
 if __name__ == "__main__":
     unittest.main()
