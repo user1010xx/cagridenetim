@@ -219,7 +219,7 @@ def _check_work_start(
         evaluation.violations.append(f"Mesai başlangıcı ihlali: {format_time(rules.work_start_time)} sonrası çağrı yok")
         return
     first_call = evaluation.calls[0]
-    if first_call.started_at > work_start:
+    if _minute_floor(first_call.started_at) > work_start:
         evaluation.violations.append(
             f"Mesai başlangıcı ihlali: ilk çağrı {first_call.started_at.strftime('%H:%M')} (limit {format_time(rules.work_start_time)})"
         )
@@ -331,7 +331,7 @@ def _check_post_break_start(
         )
         return
     first_call = calls_after_break[0]
-    if first_call.started_at > start_limit:
+    if _minute_floor(first_call.started_at) > start_limit:
         evaluation.violations.append(
             f"Mola sonrası çağrı başlangıç ihlali: ilk çağrı {first_call.started_at.strftime('%H:%M')} (limit {format_time(rules.post_break_start_time)})"
         )
@@ -442,6 +442,10 @@ def _to_int(value: object) -> int:
         return int(float(str(value or "0").replace(",", ".")))
     except ValueError:
         return 0
+
+
+def _minute_floor(value: datetime) -> datetime:
+    return value.replace(second=0, microsecond=0)
 
 
 def _first_value(item: dict[str, object], *keys: str, fuzzy: bool = True) -> object | None:
