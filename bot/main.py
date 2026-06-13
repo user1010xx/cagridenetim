@@ -55,6 +55,7 @@ from bot.handlers import (
     izin_department,
     izin_personnel,
     izin_start,
+    izinlistele,
     iziniptal_department,
     iziniptal_personnel,
     iziniptal_start,
@@ -283,6 +284,7 @@ def build_application() -> Application:
     )
     application.add_handler(CommandHandler("personel_listele", personel_listele))
     application.add_handler(CommandHandler("personel_sil", personel_sil))
+    application.add_handler(CommandHandler("izinlistele", izinlistele))
     application.add_handler(CommandHandler("rapor", rapor))
     application.add_handler(CommandHandler("kontrolinvekto", kontrolinvekto))
     application.add_handler(MessageHandler(filters.COMMAND, unknown))

@@ -80,6 +80,25 @@ class DatabaseMigrationTest(unittest.TestCase):
         finally:
             os.remove(path)
 
+    def test_list_active_leave_periods_only_returns_open_leaves(self) -> None:
+        fd, path = tempfile.mkstemp(suffix=".sqlite3")
+        os.close(fd)
+        try:
+            database = Database(path)
+            department = database.add_department("Destek", "COMPANY", "CHAT")
+            other_department = database.add_department("Satış", "COMPANY", "CHAT2")
+            database.start_leave(department.id, "Ayşe", "2026-06-10T11:00:00+03:00")
+            database.start_leave(department.id, "Mehmet", "2026-06-10T12:00:00+03:00")
+            database.start_leave(department.id, "Fatma", "2026-06-11T12:00:00+03:00")
+            database.start_leave(other_department.id, "Veli", "2026-06-10T11:30:00+03:00")
+            database.end_leave(department.id, "Mehmet", "2026-06-10T13:00:00+03:00")
+
+            rows = database.list_active_leave_periods(department.id, "2026-06-10T14:00:00+03:00")
+
+            self.assertEqual([str(row["personnel_name"]) for row in rows], ["Ayşe"])
+        finally:
+            os.remove(path)
+
     def test_new_department_starts_without_configured_rules(self) -> None:
         fd, path = tempfile.mkstemp(suffix=".sqlite3")
         os.close(fd)

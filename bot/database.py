@@ -370,6 +370,20 @@ class Database:
             ).fetchall()
         return rows
 
+    def list_active_leave_periods(self, department_id: int, current_at: str) -> list[sqlite3.Row]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM personnel_leave_periods
+                WHERE department_id = ?
+                  AND datetime(start_at) <= datetime(?)
+                  AND end_at IS NULL
+                ORDER BY personnel_name, start_at
+                """,
+                (department_id, current_at),
+            ).fetchall()
+        return rows
+
     def add_weekly_leave(self, department_identifier: str | int, personnel_name: str, weekday: int) -> bool:
         department = self.get_department(department_identifier)
         if department is None:

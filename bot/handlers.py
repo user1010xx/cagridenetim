@@ -101,6 +101,7 @@ Temel komutlar:
 /kontrolinvekto DepartmanAdı veya ID - Invekto erişimini test eder
 /izin - Personeli geçici izinli yapar
 /iziniptal - Geçici izni bitirir
+/izinlistele - Tüm izinli personelleri listeler
 /haftalikizin - Haftalık izin ekler
 /haftalikizinduzenle - Haftalık izni yeniden düzenler
 /haftalikiziniptal - Haftalık izni kaldırır
@@ -222,7 +223,8 @@ async def departmanekle_company_code(update: Update, context: ContextTypes.DEFAU
 @allowed_only
 async def departman_listele(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     database: Database = context.application.bot_data["database"]
-    departments = _departments_visible_in_chat(update, database.list_departments())
+    config: Config = context.application.bot_data["config"]
+    departments = _departments_visible_in_chat(update, database.list_departments(), config)
     if not departments:
         await update.effective_message.reply_text("Bu sohbete bağlı departman bulunamadı.")
         return
@@ -237,11 +239,15 @@ async def departman_listele(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     await update.effective_message.reply_text("\n".join(lines))
 
 
-def _departments_visible_in_chat(update: Update, departments: list[Department]) -> list[Department]:
+def _departments_visible_in_chat(update: Update, departments: list[Department], config: Config | None = None) -> list[Department]:
     chat = update.effective_chat
     if chat is None:
         return []
     if chat.type == "private":
+        if config is not None:
+            user = update.effective_user
+            if user is None or user.id not in config.admin_user_ids:
+                return []
         return departments
     return [department for department in departments if department.telegram_chat_id == str(chat.id)]
 
@@ -679,6 +685,41 @@ async def iziniptal_personnel(update: Update, context: ContextTypes.DEFAULT_TYPE
     return ConversationHandler.END
 
 
+@allowed_only
+async def izinlistele(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    database: Database = context.application.bot_data["database"]
+    config: Config = context.application.bot_data["config"]
+    departments = _departments_visible_in_chat(update, database.list_departments(), config)
+    if not departments:
+        await update.effective_message.reply_text("Bu sohbete bağlı departman bulunamadı.")
+        return
+    lines = ["🟨 İzinli Personeller"]
+    has_leave = False
+    current_at = datetime.now(config.timezone).isoformat()
+    for department in departments:
+        active_leaves = database.list_active_leave_periods(department.id, current_at)
+        weekly_leaves = database.list_weekly_leaves(department.id)
+        if not active_leaves and not weekly_leaves:
+            continue
+        has_leave = True
+        lines.append("")
+        lines.append(f"🏢 {department.name}")
+        if active_leaves:
+            lines.append("Geçici izinler:")
+            for leave in active_leaves:
+                lines.append(f"   • {leave['personnel_name']} - başlangıç {_format_datetime_text(str(leave['start_at']), config)}")
+        if weekly_leaves:
+            lines.append("Haftalık izinler:")
+            for leave in weekly_leaves:
+                weekday = WEEKDAY_LABELS.get(int(leave["weekday"]), str(leave["weekday"]))
+                lines.append(f"   • {leave['personnel_name']} - {weekday}")
+    if not has_leave:
+        await update.effective_message.reply_text("Aktif izinli personel bulunamadı.")
+        return
+    for message in split_telegram_message("\n".join(lines)):
+        await update.effective_message.reply_text(message)
+
+
 @admin_only
 async def sorumluekle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["responsible_add"] = {}
@@ -995,6 +1036,16 @@ def _format_personnel_list(department_name: str, personnel: Sequence[Personnel])
         extension = person.extension or "-"
         lines.append(f"{index}. {person.name} | ID: {person.id} | dahili: {extension} | {status}")
     return "\n".join(lines)
+
+
+def _format_datetime_text(value: str, config: Config | None = None) -> str:
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return value
+    if config is not None and parsed.tzinfo is not None:
+        parsed = parsed.astimezone(config.timezone)
+    return parsed.strftime("%d.%m.%Y %H:%M")
 
 
 def _import_personnel_rows(database: Database, rows: Sequence[PersonnelImportRow], errors: Sequence[str]) -> tuple[int, list[str]]:
