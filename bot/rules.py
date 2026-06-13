@@ -105,25 +105,6 @@ def evaluate_department(
             )
             for name, records in grouped.items()
         ]
-    if personnel:
-        known_names = {person.name.casefold() for person in personnel}
-        known_extensions = {person.extension for person in personnel if person.extension}
-        for name, records in grouped.items():
-            first_record = records[0] if records else None
-            if name.casefold() in known_names:
-                continue
-            if first_record and first_record.extension in known_extensions:
-                continue
-            expected_people.append(
-                Personnel(
-                    id=0,
-                    department_id=rules.department_id,
-                    name=name,
-                    extension=first_record.extension if first_record else None,
-                    is_active=True,
-                )
-            )
-
     for person in expected_people:
         person_calls = _calls_for_person(person, grouped)
         total_call_count = len(person_calls)

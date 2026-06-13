@@ -434,6 +434,36 @@ class RulesTest(unittest.TestCase):
         self.assertEqual(records[0].extension_name, "Bilinmeyen")
         self.assertEqual(records[0].extension, "1001")
 
+    def test_evaluate_department_ignores_api_people_outside_department_personnel(self) -> None:
+        result = evaluate_department(
+            [
+                call("Ali", "11:10", extension="1001"),
+                call("Veli", "11:30", extension="2001"),
+            ],
+            [Personnel(id=1, department_id=1, name="Ali", extension="1001", is_active=True)],
+            self.rules,
+            self.report_date,
+            dt("11:40"),
+            TZ,
+        )
+
+        self.assertEqual([evaluation.name for evaluation in result], ["Ali"])
+
+    def test_evaluate_department_can_still_use_api_people_when_no_personnel_list_exists(self) -> None:
+        result = evaluate_department(
+            [
+                call("Ali", "11:10", extension="1001"),
+                call("Veli", "11:30", extension="2001"),
+            ],
+            [],
+            self.rules,
+            self.report_date,
+            dt("11:40"),
+            TZ,
+        )
+
+        self.assertEqual([evaluation.name for evaluation in result], ["Ali", "Veli"])
+
     def test_grid_call_after_work_start_is_not_treated_as_missing_call(self) -> None:
         records = normalize_calls(
             [
