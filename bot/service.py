@@ -49,6 +49,11 @@ async def generate_department_report_payload(
     raw_calls = await client.fetch_call_report(department.company_code, report_date)
     calls = normalize_calls(raw_calls, now.tzinfo)
     leave_periods = _load_leave_periods(database, department.id, report_date, now.tzinfo)
+    weekly_leave_names = {
+        str(row["personnel_name"]).casefold()
+        for row in database.list_weekly_leaves(department.id)
+        if int(row["weekday"]) == report_date.weekday()
+    }
     responsibles = database.list_responsibles(department.id)
     evaluations = evaluate_department(
         calls,
@@ -58,6 +63,7 @@ async def generate_department_report_payload(
         now,
         now.tzinfo,
         leave_periods=leave_periods,
+        weekly_leave_names=weekly_leave_names,
     )
     notified_violations = database.list_notified_violations(department.id, report_date.isoformat()) if suppress_notified else set()
     report_evaluations = _filter_notified_violations(evaluations, notified_violations)

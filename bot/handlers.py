@@ -897,7 +897,9 @@ async def haftalikiziniptal_day(update: Update, context: ContextTypes.DEFAULT_TY
     if weekday is None and not _is_blank_rule(text):
         await update.effective_message.reply_text("Gün adı geçersiz. Örnek: pazartesi veya boş")
         return WEEKLY_LEAVE_CANCEL_DAY
-    if not database.delete_department_weekly_leave(department.id, weekday):
+    deleted_department_leave = database.delete_department_weekly_leave(department.id, weekday)
+    deleted_personnel_leaves = database.delete_personnel_weekly_leaves(department.id, weekday)
+    if not deleted_department_leave and not deleted_personnel_leaves:
         await update.effective_message.reply_text("Haftalık izin kaydı bulunamadı.")
         return WEEKLY_LEAVE_CANCEL_DAY
     context.user_data.pop("weekly_leave_cancel", None)

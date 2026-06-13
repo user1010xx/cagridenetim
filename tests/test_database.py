@@ -128,6 +128,34 @@ class DatabaseMigrationTest(unittest.TestCase):
         finally:
             os.remove(path)
 
+    def test_weekly_leave_rejects_department_sentinel_as_personnel_name(self) -> None:
+        fd, path = tempfile.mkstemp(suffix=".sqlite3")
+        os.close(fd)
+        try:
+            database = Database(path)
+            department = database.add_department("Destek", "COMPANY", "CHAT")
+
+            self.assertFalse(database.add_weekly_leave(department.id, "__department__", 1))
+            self.assertFalse(database.delete_weekly_leave(department.id, "__department__", 1))
+            self.assertEqual(database.list_weekly_leaves(department.id), [])
+        finally:
+            os.remove(path)
+
+    def test_delete_personnel_weekly_leaves_does_not_delete_department_leave(self) -> None:
+        fd, path = tempfile.mkstemp(suffix=".sqlite3")
+        os.close(fd)
+        try:
+            database = Database(path)
+            department = database.add_department("Destek", "COMPANY", "CHAT")
+            database.add_weekly_leave(department.id, "Ayşe", 3)
+            database.add_department_weekly_leave(department.id, 3)
+
+            self.assertTrue(database.delete_personnel_weekly_leaves(department.id, 3))
+            self.assertEqual(database.list_weekly_leaves(department.id), [])
+            self.assertTrue(database.is_department_weekly_leave(department.id, 3))
+        finally:
+            os.remove(path)
+
     def test_new_department_starts_without_configured_rules(self) -> None:
         fd, path = tempfile.mkstemp(suffix=".sqlite3")
         os.close(fd)

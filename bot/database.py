@@ -391,13 +391,16 @@ class Database:
         department = self.get_department(department_identifier)
         if department is None:
             return False
+        clean_name = personnel_name.strip()
+        if clean_name == DEPARTMENT_WEEKLY_LEAVE_NAME:
+            return False
         with self.connect() as connection:
             connection.execute(
                 """
                 INSERT OR REPLACE INTO weekly_leaves (department_id, personnel_name, weekday)
                 VALUES (?, ?, ?)
                 """,
-                (department.id, personnel_name.strip(), int(weekday)),
+                (department.id, clean_name, int(weekday)),
             )
         return True
 
@@ -423,11 +426,27 @@ class Database:
         department = self.get_department(department_identifier)
         if department is None:
             return False
+        clean_name = personnel_name.strip()
+        if clean_name == DEPARTMENT_WEEKLY_LEAVE_NAME:
+            return False
         query = "DELETE FROM weekly_leaves WHERE department_id = ? AND lower(personnel_name) = lower(?)"
-        params: tuple[object, ...] = (department.id, personnel_name.strip())
+        params: tuple[object, ...] = (department.id, clean_name)
         if weekday is not None:
             query += " AND weekday = ?"
-            params = (department.id, personnel_name.strip(), int(weekday))
+            params = (department.id, clean_name, int(weekday))
+        with self.connect() as connection:
+            cursor = connection.execute(query, params)
+        return cursor.rowcount > 0
+
+    def delete_personnel_weekly_leaves(self, department_identifier: str | int, weekday: int | None = None) -> bool:
+        department = self.get_department(department_identifier)
+        if department is None:
+            return False
+        query = "DELETE FROM weekly_leaves WHERE department_id = ? AND personnel_name <> ?"
+        params: tuple[object, ...] = (department.id, DEPARTMENT_WEEKLY_LEAVE_NAME)
+        if weekday is not None:
+            query += " AND weekday = ?"
+            params = (department.id, DEPARTMENT_WEEKLY_LEAVE_NAME, int(weekday))
         with self.connect() as connection:
             cursor = connection.execute(query, params)
         return cursor.rowcount > 0
