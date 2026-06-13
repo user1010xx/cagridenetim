@@ -80,6 +80,36 @@ class DatabaseMigrationTest(unittest.TestCase):
         finally:
             os.remove(path)
 
+    def test_new_department_starts_without_configured_rules(self) -> None:
+        fd, path = tempfile.mkstemp(suffix=".sqlite3")
+        os.close(fd)
+        try:
+            database = Database(path)
+            department = database.add_department("Destek", "COMPANY", "CHAT")
+
+            rules = database.get_rules(department.id)
+
+            self.assertFalse(rules.is_configured)
+            self.assertIsNone(rules.work_start_time)
+            self.assertIsNone(rules.max_call_gap_minutes)
+        finally:
+            os.remove(path)
+
+    def test_update_rules_marks_department_rules_configured(self) -> None:
+        fd, path = tempfile.mkstemp(suffix=".sqlite3")
+        os.close(fd)
+        try:
+            database = Database(path)
+            department = database.add_department("Destek", "COMPANY", "CHAT")
+
+            self.assertTrue(database.update_rules(department.id, "11:10", "13:50", "14:00", "15:00", "15:15", "18:50", 15))
+            rules = database.get_rules(department.id)
+
+            self.assertTrue(rules.is_configured)
+            self.assertEqual(rules.max_call_gap_minutes, 15)
+        finally:
+            os.remove(path)
+
 
 if __name__ == "__main__":
     unittest.main()

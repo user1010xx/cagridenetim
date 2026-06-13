@@ -43,6 +43,8 @@ async def generate_department_report_payload(
     if department is None:
         raise ValueError("Departman bulunamadı.")
     rules = database.get_rules(department.id)
+    if not rules.is_configured:
+        raise ValueError("Departman kuralları tanımlı değil. Önce /kuralayarla ile kuralları giriniz.")
     personnel = database.list_personnel(department.id)
     raw_calls = await client.fetch_call_report(department.company_code, report_date)
     calls = normalize_calls(raw_calls, now.tzinfo)

@@ -49,6 +49,7 @@ class Database:
                     post_break_start_time TEXT,
                     work_end_time TEXT,
                     max_call_gap_minutes INTEGER,
+                    is_configured INTEGER NOT NULL DEFAULT 0,
                     FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE
                 )
                 """
@@ -133,17 +134,8 @@ class Database:
             department_id = int(cursor.lastrowid)
             connection.execute(
                 """
-                INSERT INTO department_rules (
-                    department_id,
-                    work_start_time,
-                    pre_break_leave_time,
-                    break_start_time,
-                    break_end_time,
-                    post_break_start_time,
-                    work_end_time,
-                    max_call_gap_minutes
-                )
-                VALUES (?, '11:10', NULL, '13:50', '15:15', NULL, '18:50', 15)
+                INSERT INTO department_rules (department_id, is_configured)
+                VALUES (?, 0)
                 """,
                 (department_id,),
             )
@@ -226,6 +218,7 @@ class Database:
             post_break_start_time=_parse_optional_time(row["post_break_start_time"]),
             work_end_time=_parse_optional_time(row["work_end_time"]),
             max_call_gap_minutes=int(row["max_call_gap_minutes"]) if row["max_call_gap_minutes"] is not None else None,
+            is_configured=bool(row["is_configured"]),
         )
 
     def update_rules(
@@ -253,7 +246,7 @@ class Database:
             department.id,
         )
         with self.connect() as connection:
-            connection.execute(
+            cursor = connection.execute(
                 """
                 UPDATE department_rules
                 SET work_start_time = ?,
@@ -262,11 +255,30 @@ class Database:
                     break_end_time = ?,
                     post_break_start_time = ?,
                     work_end_time = ?,
-                    max_call_gap_minutes = ?
+                    max_call_gap_minutes = ?,
+                    is_configured = 1
                 WHERE department_id = ?
                 """,
                 values,
             )
+            if cursor.rowcount == 0:
+                connection.execute(
+                    """
+                    INSERT INTO department_rules (
+                        work_start_time,
+                        pre_break_leave_time,
+                        break_start_time,
+                        break_end_time,
+                        post_break_start_time,
+                        work_end_time,
+                        max_call_gap_minutes,
+                        department_id,
+                        is_configured
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+                    """,
+                    values,
+                )
         return True
 
     def add_personnel(self, department_identifier: str | int, name: str, extension: str | None) -> Personnel | None:
@@ -497,10 +509,12 @@ class Database:
             "post_break_start_time",
             "work_end_time",
             "max_call_gap_minutes",
+            "is_configured",
         ]
         has_expected_columns = set(expected).issubset(columns)
+        nullable_rule_columns = set(expected[1:]) - {"is_configured"}
         has_not_null_rule_columns = any(
-            row["name"] in expected[1:] and bool(row["notnull"])
+            row["name"] in nullable_rule_columns and bool(row["notnull"])
             for row in rows
         )
         if has_expected_columns and not has_not_null_rule_columns:
@@ -516,6 +530,7 @@ class Database:
                 post_break_start_time TEXT,
                 work_end_time TEXT,
                 max_call_gap_minutes INTEGER,
+                is_configured INTEGER NOT NULL DEFAULT 1,
                 FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE
             )
             """
@@ -524,6 +539,8 @@ class Database:
         for column in expected:
             if column in columns:
                 select_columns.append(column)
+            elif column == "is_configured":
+                select_columns.append("1 AS is_configured")
             else:
                 select_columns.append(f"NULL AS {column}")
         connection.execute(
@@ -536,7 +553,8 @@ class Database:
                 break_end_time,
                 post_break_start_time,
                 work_end_time,
-                max_call_gap_minutes
+                max_call_gap_minutes,
+                is_configured
             )
             SELECT {", ".join(select_columns)}
             FROM department_rules

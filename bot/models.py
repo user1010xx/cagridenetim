@@ -21,6 +21,7 @@ class DepartmentRules:
     post_break_start_time: time | None
     work_end_time: time | None
     max_call_gap_minutes: int | None
+    is_configured: bool = True
 
 
 @dataclass(frozen=True)

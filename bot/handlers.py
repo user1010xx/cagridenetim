@@ -229,8 +229,9 @@ async def departman_listele(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     for department in departments:
         rules = database.get_rules(department.id)
         status = "aktif" if department.is_active else "pasif"
+        rule_text = f"{rules.max_call_gap_minutes} dk" if rules.is_configured else "kural tanımlı değil"
         lines.append(
-            f"{department.id}. {department.name} | {status} | code: {department.company_code} | chat: {department.telegram_chat_id} | {rules.max_call_gap_minutes} dk"
+            f"{department.id}. {department.name} | {status} | code: {department.company_code} | chat: {department.telegram_chat_id} | {rule_text}"
         )
     await update.effective_message.reply_text("\n".join(lines))
 
@@ -873,6 +874,9 @@ async def rapor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     if not _can_report_department_in_chat(update, department):
         await update.effective_message.reply_text("Bu departman raporu sadece kayıtlı Telegram grubunda alınabilir.")
+        return
+    if not database.get_rules(department.id).is_configured:
+        await update.effective_message.reply_text("Bu departman için kurallar tanımlı değil. Önce /kuralayarla ile kuralları giriniz.")
         return
     await update.effective_message.reply_text("Rapor hazırlanıyor...")
     try:
