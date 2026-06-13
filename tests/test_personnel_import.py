@@ -183,7 +183,7 @@ class PersonnelImportTest(unittest.TestCase):
         self.assertIn("0 yeni ihlal", text)
         self.assertIn("Yeni ihlal yok", text)
         self.assertNotIn("Uygun Personeller", text)
-        self.assertIn("Yeni İhlali Olmayan Personeller", text)
+        self.assertNotIn("Yeni İhlali Olmayan Personeller", text)
         self.assertIn("Ayşe", text)
 
     def test_report_personnel_call_counts_use_total_call_count_when_available(self) -> None:
@@ -205,6 +205,39 @@ class PersonnelImportTest(unittest.TestCase):
         )
 
         self.assertIn("Asu (605) - 12 çağrı", text)
+
+    def test_report_shows_leave_people_instead_of_ok_people(self) -> None:
+        from datetime import date, datetime, time
+        from zoneinfo import ZoneInfo
+
+        from bot.models import Department, DepartmentRules
+        from bot.rules import PersonnelEvaluation
+
+        text = build_department_report(
+            department=Department(1, "Destek", "COMPANY", "CHAT", True),
+            rules=DepartmentRules(1, time(11, 10), None, None, None, None, None, 15),
+            evaluations=[
+                PersonnelEvaluation(name="Ayşe", extension="1001", violations=[]),
+                PersonnelEvaluation(name="Asu", extension="605", violations=[], is_on_leave=True),
+            ],
+            report_date=date(2026, 6, 10),
+            now=datetime(2026, 6, 10, 12, 0, tzinfo=ZoneInfo("Europe/Istanbul")),
+            raw_call_count=12,
+            processed_call_count=12,
+            personnel=[],
+        )
+
+        self.assertNotIn("Uygun Personeller", text)
+        self.assertIn("İzinli Personeller", text)
+        self.assertIn("Asu (605)", text)
+        self.assertIn("Personel Çağrı Adetleri", text)
+
+    def test_split_telegram_message_splits_long_single_lines(self) -> None:
+        from bot.reporting import split_telegram_message
+
+        parts = split_telegram_message("x" * 25, limit=10)
+
+        self.assertEqual(parts, ["x" * 10, "x" * 10, "x" * 5])
 
 
 if __name__ == "__main__":

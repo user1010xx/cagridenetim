@@ -31,6 +31,7 @@ class PersonnelEvaluation:
     violations: list[str] = field(default_factory=list)
     leave_periods: list[tuple[datetime, datetime | None]] = field(default_factory=list)
     total_call_count: int | None = None
+    is_on_leave: bool = False
 
 
 def normalize_calls(raw_calls: list[dict[str, object]], timezone: ZoneInfo) -> list[CallRecord]:
@@ -124,11 +125,19 @@ def evaluate_department(
             )
 
     for person in expected_people:
-        if person.name.casefold() in weekly_leave_names:
-            continue
         person_calls = _calls_for_person(person, grouped)
         total_call_count = len(person_calls)
         person_leave_periods = _leave_periods_for_person(person, leave_periods or {})
+        if person.name.casefold() in weekly_leave_names:
+            evaluations.append(
+                PersonnelEvaluation(
+                    name=person.name,
+                    extension=person.extension,
+                    total_call_count=total_call_count,
+                    is_on_leave=True,
+                )
+            )
+            continue
         person_calls = _filter_calls_by_leave(person_calls, person_leave_periods)
         evaluation = PersonnelEvaluation(
             name=person.name,
@@ -136,6 +145,7 @@ def evaluate_department(
             calls=person_calls,
             leave_periods=person_leave_periods,
             total_call_count=total_call_count,
+            is_on_leave=bool(person_leave_periods),
         )
         _check_work_start(evaluation, rules, report_date, now, timezone)
         _check_call_gaps(evaluation, rules, report_date, timezone)

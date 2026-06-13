@@ -249,7 +249,7 @@ class RulesTest(unittest.TestCase):
         )
         self.assertTrue(any("Çağrı arası" in violation for violation in result.violations))
 
-    def test_personnel_on_weekly_leave_is_not_evaluated(self) -> None:
+    def test_personnel_on_weekly_leave_is_reported_as_leave(self) -> None:
         result = evaluate_department(
             [],
             self.personnel,
@@ -259,7 +259,9 @@ class RulesTest(unittest.TestCase):
             TZ,
             weekly_leave_names={"ali"},
         )
-        self.assertEqual(result, [])
+        self.assertEqual(len(result), 1)
+        self.assertTrue(result[0].is_on_leave)
+        self.assertEqual(result[0].violations, [])
 
     def test_calls_during_leave_period_are_not_evaluated(self) -> None:
         result = evaluate_department(

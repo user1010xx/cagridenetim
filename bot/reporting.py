@@ -52,10 +52,11 @@ def build_department_report(
                 "",
             ]
         )
+    leave_count = sum(1 for evaluation in evaluations if evaluation.is_on_leave)
     if new_violations_only:
-        lines.append(f"Özet: {'❌' if violation_count else '✅'} {violation_count} yeni ihlal")
+        lines.append(f"Özet: {'❌' if violation_count else '✅'} {violation_count} yeni ihlal | 🟨 {leave_count} izinli personel")
     else:
-        lines.append(f"Özet: {'❌' if violation_count else '✅'} {violation_count} ihlal | ✅ {ok_count} uygun personel")
+        lines.append(f"Özet: {'❌' if violation_count else '✅'} {violation_count} ihlal | 🟨 {leave_count} izinli personel")
     lines.append("")
 
     if violation_count:
@@ -69,12 +70,7 @@ def build_department_report(
                 lines.append(f"   • {violation}")
         lines.append("")
 
-    ok_people = [] if new_violations_only and violation_count else [evaluation for evaluation in evaluations if not evaluation.violations]
-    if ok_people:
-        lines.append("✅ Yeni İhlali Olmayan Personeller" if new_violations_only else "✅ Uygun Personeller")
-        for evaluation in ok_people:
-            extension_text = f" ({evaluation.extension})" if evaluation.extension else ""
-            lines.append(f"   • {evaluation.name}{extension_text} - {len(evaluation.calls)} çağrı")
+    _append_leave_people(lines, evaluations)
 
     if new_violations_only and not violation_count:
         lines.append("✅ Yeni ihlal yok. Önceden bildirilen ihlaller tekrar gönderilmedi.")
@@ -96,6 +92,18 @@ def _append_personnel_call_counts(lines: list[str], evaluations: list[PersonnelE
         extension_text = f" ({evaluation.extension})" if evaluation.extension else ""
         call_count = evaluation.total_call_count if evaluation.total_call_count is not None else len(evaluation.calls)
         lines.append(f"   • {evaluation.name}{extension_text} - {call_count} çağrı")
+
+
+def _append_leave_people(lines: list[str], evaluations: list[PersonnelEvaluation]) -> None:
+    leave_people = [evaluation for evaluation in evaluations if evaluation.is_on_leave]
+    if not leave_people:
+        return
+    if lines and lines[-1]:
+        lines.append("")
+    lines.append("🟨 İzinli Personeller")
+    for evaluation in leave_people:
+        extension_text = f" ({evaluation.extension})" if evaluation.extension else ""
+        lines.append(f"   • {evaluation.name}{extension_text}")
 
 
 def _rules_summary(rules: DepartmentRules) -> str:
@@ -131,6 +139,13 @@ def split_telegram_message(message: str, limit: int = 3900) -> list[str]:
     current: list[str] = []
     current_length = 0
     for line in message.splitlines():
+        if len(line) + 1 > limit:
+            if current:
+                parts.append("\n".join(current))
+                current = []
+                current_length = 0
+            parts.extend(_split_long_line(line, limit))
+            continue
         line_length = len(line) + 1
         if current and current_length + line_length > limit:
             parts.append("\n".join(current))
@@ -141,3 +156,7 @@ def split_telegram_message(message: str, limit: int = 3900) -> list[str]:
     if current:
         parts.append("\n".join(current))
     return parts
+
+
+def _split_long_line(line: str, limit: int) -> list[str]:
+    return [line[index : index + limit] for index in range(0, len(line), limit)]
