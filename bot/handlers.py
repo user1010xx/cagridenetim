@@ -221,9 +221,9 @@ async def departmanekle_company_code(update: Update, context: ContextTypes.DEFAU
 @allowed_only
 async def departman_listele(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     database: Database = context.application.bot_data["database"]
-    departments = database.list_departments()
+    departments = _departments_visible_in_chat(update, database.list_departments())
     if not departments:
-        await update.effective_message.reply_text("Henüz departman tanımlı değil.")
+        await update.effective_message.reply_text("Bu sohbete bağlı departman bulunamadı.")
         return
     lines = ["🏢 Departmanlar"]
     for department in departments:
@@ -234,6 +234,15 @@ async def departman_listele(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             f"{department.id}. {department.name} | {status} | code: {department.company_code} | chat: {department.telegram_chat_id} | {rule_text}"
         )
     await update.effective_message.reply_text("\n".join(lines))
+
+
+def _departments_visible_in_chat(update: Update, departments: list[Department]) -> list[Department]:
+    chat = update.effective_chat
+    if chat is None:
+        return []
+    if chat.type == "private":
+        return departments
+    return [department for department in departments if department.telegram_chat_id == str(chat.id)]
 
 
 @admin_only

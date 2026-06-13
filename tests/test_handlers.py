@@ -2,7 +2,7 @@ import unittest
 from types import SimpleNamespace
 
 from bot.config import Config
-from bot.handlers import _can_report_department_in_chat, _is_allowed, _is_registered_department_chat
+from bot.handlers import _can_report_department_in_chat, _departments_visible_in_chat, _is_allowed, _is_registered_department_chat
 from bot.models import Department
 
 
@@ -75,6 +75,24 @@ class HandlerTest(unittest.TestCase):
         )
 
         self.assertFalse(_is_allowed(update, context))
+
+    def test_department_list_in_group_shows_only_group_department(self) -> None:
+        update = SimpleNamespace(effective_chat=SimpleNamespace(id=-1002, type="group"))
+        departments = [
+            Department(1, "Satış1", "COMPANY", "-1001", True),
+            Department(2, "Satış2", "COMPANY", "-1002", True),
+        ]
+
+        self.assertEqual(_departments_visible_in_chat(update, departments), [departments[1]])
+
+    def test_department_list_in_private_chat_shows_all_departments(self) -> None:
+        update = SimpleNamespace(effective_chat=SimpleNamespace(id=42, type="private"))
+        departments = [
+            Department(1, "Satış1", "COMPANY", "-1001", True),
+            Department(2, "Satış2", "COMPANY", "-1002", True),
+        ]
+
+        self.assertEqual(_departments_visible_in_chat(update, departments), departments)
 
 
 def _config(admin_user_ids: set[int]) -> Config:
