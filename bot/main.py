@@ -7,6 +7,22 @@ from telegram.ext import Application, CommandHandler, ConversationHandler, Messa
 
 from bot.config import load_config
 from bot.database import Database
+from bot.department_handlers import (
+    chatayarla_department,
+    chatayarla_start,
+    chatayarla_value,
+    companycodeayarla_department,
+    companycodeayarla_start,
+    companycodeayarla_value,
+    departman_aktif,
+    departman_listele,
+    departman_pasif,
+    departman_sil_identifier,
+    departman_sil_start,
+    departmanekle_company_code,
+    departmanekle_name,
+    departmanekle_start,
+)
 from bot.handlers import (
     CHAT_DEPARTMENT,
     CHAT_VALUE,
@@ -23,43 +39,15 @@ from bot.handlers import (
     PERSONNEL_ADD_EXTENSION,
     PERSONNEL_ADD_NAME,
     PERSONNEL_BULK_FILE,
+    PERSONNEL_DELETE_DEPARTMENT,
+    PERSONNEL_DELETE_NAME,
     RESPONSIBLE_ADD_DEPARTMENT,
     RESPONSIBLE_ADD_USERNAME,
     RESPONSIBLE_DELETE_DEPARTMENT,
     RESPONSIBLE_DELETE_USERNAME,
     RESPONSIBLE_LIST_DEPARTMENT,
     chat_id,
-    chatayarla_department,
-    chatayarla_start,
-    chatayarla_value,
-    companycodeayarla_department,
-    companycodeayarla_start,
-    companycodeayarla_value,
-    departman_aktif,
-    departmanekle_company_code,
-    departmanekle_name,
-    departmanekle_start,
-    departman_listele,
-    departman_pasif,
-    departman_sil_identifier,
-    departman_sil_start,
-    haftalikizin_day,
-    haftalikizin_department,
-    haftalikizin_start,
-    haftalikizinduzenle_start,
-    haftalikiziniptal_day,
-    haftalikiziniptal_department,
-    haftalikiziniptal_start,
-    izin_department,
-    izin_personnel,
-    izin_start,
-    izinlistele,
-    iziniptal_department,
-    iziniptal_personnel,
-    iziniptal_start,
     kimim,
-    kontrolinvekto,
-    kurallistele,
     kuralayarla_break_interval,
     kuralayarla_cancel,
     kuralayarla_department,
@@ -69,15 +57,6 @@ from bot.handlers import (
     kuralayarla_start,
     kuralayarla_work_end,
     kuralayarla_work_start,
-    personelekle_department,
-    personelekle_extension,
-    personelekle_name,
-    personelekle_start,
-    personel_listele,
-    personel_sil,
-    personeltopluekle_file,
-    personeltopluekle_start,
-    rapor,
     sorumluekle_department,
     sorumluekle_start,
     sorumluekle_username,
@@ -100,6 +79,35 @@ from bot.handlers import (
     start,
     unknown,
 )
+from bot.leave_handlers import (
+    haftalikizin_day,
+    haftalikizin_department,
+    haftalikizin_start,
+    haftalikizinduzenle_start,
+    haftalikiziniptal_day,
+    haftalikiziniptal_department,
+    haftalikiziniptal_start,
+    izin_department,
+    izin_personnel,
+    izin_start,
+    iziniptal_department,
+    iziniptal_personnel,
+    iziniptal_start,
+    izinlistele,
+)
+from bot.personnel_handlers import (
+    personel_listele,
+    personel_sil_department,
+    personel_sil_name,
+    personel_sil_start,
+    personelekle_department,
+    personelekle_extension,
+    personelekle_name,
+    personelekle_start,
+    personeltopluekle_file,
+    personeltopluekle_start,
+)
+from bot.report_handlers import kontrolinvekto, kurallistele, rapor
 from bot.invekto_client import InvektoClient
 from bot.scheduler import run_scheduler
 
@@ -278,7 +286,16 @@ def build_application() -> Application:
         )
     )
     application.add_handler(CommandHandler("personel_listele", personel_listele))
-    application.add_handler(CommandHandler("personel_sil", personel_sil))
+    application.add_handler(
+        ConversationHandler(
+            entry_points=[CommandHandler("personel_sil", personel_sil_start)],
+            states={
+                PERSONNEL_DELETE_DEPARTMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, personel_sil_department)],
+                PERSONNEL_DELETE_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, personel_sil_name)],
+            },
+            fallbacks=[CommandHandler("iptal", kuralayarla_cancel)],
+        )
+    )
     application.add_handler(CommandHandler("izinlistele", izinlistele))
     application.add_handler(CommandHandler("kurallistele", kurallistele))
     application.add_handler(CommandHandler("rapor", rapor))

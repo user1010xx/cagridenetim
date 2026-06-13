@@ -41,6 +41,15 @@ def build_department_report(
                 "",
             ]
         )
+    if raw_call_count == 0:
+        lines.extend(
+            [
+                "🚨🚨🚨 ALARM: INVEKTO API 0 ÇAĞRI KAYDI DÖNDÜ! 🚨🚨🚨",
+                "Bu gerçek çağrı yokluğu veya API/CompanyCode erişim sorunu olabilir.",
+                f"Lütfen /rapor {department.name} komutu ile tekrar manuel kontrol edin.",
+                "",
+            ]
+        )
     if responsibles:
         mentions = " ".join(f"@{responsible.username}" for responsible in responsibles)
         lines.append(f"👥 Sorumlular: {mentions}")

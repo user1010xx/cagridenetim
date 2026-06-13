@@ -39,7 +39,7 @@ async def send_scheduled_reports(application: Application) -> None:
     for index, department in enumerate(departments):
         report = None
         try:
-            if database.is_department_weekly_leave(department.id, now.weekday()):
+            if database.is_department_weekly_leave(department.id, now.weekday(), now.date().isoformat()):
                 logger.info("Departman haftalık izinli, zamanlanmış rapor atlandı: %s", department.name)
                 continue
             if not database.get_rules(department.id).is_configured:
@@ -73,12 +73,19 @@ async def send_scheduled_reports(application: Application) -> None:
 
 
 async def _send_message_with_retry(application: Application, chat_id: str, text: str) -> None:
-    try:
-        await application.bot.send_message(chat_id=chat_id, text=text)
-    except Exception:
-        logger.warning("Telegram mesaj parçası gönderilemedi, tekrar deneniyor.", exc_info=True)
-        await asyncio.sleep(1)
-        await application.bot.send_message(chat_id=chat_id, text=text)
+    delays = (0, 1, 3)
+    last_error: Exception | None = None
+    for delay in delays:
+        if delay:
+            await asyncio.sleep(delay)
+        try:
+            await application.bot.send_message(chat_id=chat_id, text=text)
+            return
+        except Exception as exc:
+            last_error = exc
+            logger.warning("Telegram mesaj parçası gönderilemedi, tekrar deneniyor.", exc_info=True)
+    if last_error is not None:
+        raise last_error
 
 
 def _seconds_until_next_run(config: Config) -> float:

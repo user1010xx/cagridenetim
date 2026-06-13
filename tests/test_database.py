@@ -99,16 +99,14 @@ class DatabaseMigrationTest(unittest.TestCase):
         finally:
             os.remove(path)
 
-    def test_department_weekly_leave_is_separate_from_personnel_weekly_leaves(self) -> None:
+    def test_department_weekly_leave_is_stored_separately(self) -> None:
         fd, path = tempfile.mkstemp(suffix=".sqlite3")
         os.close(fd)
         try:
             database = Database(path)
             department = database.add_department("Destek", "COMPANY", "CHAT")
-            database.add_weekly_leave(department.id, "Ayşe", 1)
             database.add_department_weekly_leave(department.id, 3)
 
-            self.assertEqual([str(row["personnel_name"]) for row in database.list_weekly_leaves(department.id)], ["Ayşe"])
             self.assertEqual([int(row["weekday"]) for row in database.list_department_weekly_leaves(department.id)], [3])
             self.assertTrue(database.is_department_weekly_leave(department.id, 3))
             self.assertFalse(database.is_department_weekly_leave(department.id, 4))
@@ -128,30 +126,35 @@ class DatabaseMigrationTest(unittest.TestCase):
         finally:
             os.remove(path)
 
-    def test_weekly_leave_rejects_department_sentinel_as_personnel_name(self) -> None:
+    def test_department_weekly_leave_cancel_only_skips_selected_week_date(self) -> None:
         fd, path = tempfile.mkstemp(suffix=".sqlite3")
         os.close(fd)
         try:
             database = Database(path)
             department = database.add_department("Destek", "COMPANY", "CHAT")
+            database.add_department_weekly_leave(department.id, 3)
 
-            self.assertFalse(database.add_weekly_leave(department.id, "__department__", 1))
-            self.assertFalse(database.delete_weekly_leave(department.id, "__department__", 1))
-            self.assertEqual(database.list_weekly_leaves(department.id), [])
+            database.cancel_department_weekly_leave(department.id, "2026-06-11")
+
+            self.assertFalse(database.is_department_weekly_leave(department.id, 3, "2026-06-11"))
+            self.assertTrue(database.is_department_weekly_leave(department.id, 3, "2026-06-18"))
         finally:
             os.remove(path)
 
-    def test_delete_personnel_weekly_leaves_does_not_delete_department_leave(self) -> None:
+    def test_migrates_legacy_weekly_leaves_to_department_weekly_leaves(self) -> None:
         fd, path = tempfile.mkstemp(suffix=".sqlite3")
         os.close(fd)
         try:
             database = Database(path)
             department = database.add_department("Destek", "COMPANY", "CHAT")
-            database.add_weekly_leave(department.id, "Ayşe", 3)
-            database.add_department_weekly_leave(department.id, 3)
+            with database.connect() as connection:
+                connection.execute(
+                    "INSERT INTO weekly_leaves (department_id, personnel_name, weekday) VALUES (?, ?, ?)",
+                    (department.id, "Ayşe", 3),
+                )
+            database.init()
 
-            self.assertTrue(database.delete_personnel_weekly_leaves(department.id, 3))
-            self.assertEqual(database.list_weekly_leaves(department.id), [])
+            self.assertEqual(database.list_department_weekly_leaves(department.id)[0]["weekday"], 3)
             self.assertTrue(database.is_department_weekly_leave(department.id, 3))
         finally:
             os.remove(path)

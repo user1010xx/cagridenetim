@@ -1,0 +1,16 @@
+from bot.handlers import (
+    chatayarla_department,
+    chatayarla_start,
+    chatayarla_value,
+    companycodeayarla_department,
+    companycodeayarla_start,
+    companycodeayarla_value,
+    departman_aktif,
+    departman_listele,
+    departman_pasif,
+    departman_sil_identifier,
+    departman_sil_start,
+    departmanekle_company_code,
+    departmanekle_name,
+    departmanekle_start,
+)

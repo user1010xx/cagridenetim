@@ -99,6 +99,26 @@ class PersonnelImportTest(unittest.TestCase):
         self.assertIn("API veri döndü ama bot işleyemedi", text)
         self.assertIn("Date, Time, Duration", text)
 
+    def test_report_warns_when_api_returns_zero_calls(self) -> None:
+        from datetime import date, datetime, time
+        from zoneinfo import ZoneInfo
+
+        from bot.models import Department, DepartmentRules
+
+        text = build_department_report(
+            department=Department(1, "Destek", "COMPANY", "CHAT", True),
+            rules=DepartmentRules(1, time(11, 10), None, None, None, None, None, 15),
+            evaluations=[],
+            report_date=date(2026, 6, 10),
+            now=datetime(2026, 6, 10, 12, 0, tzinfo=ZoneInfo("Europe/Istanbul")),
+            raw_call_count=0,
+            processed_call_count=0,
+            personnel=[],
+        )
+
+        self.assertIn("ALARM: INVEKTO API 0 ÇAĞRI KAYDI DÖNDÜ", text)
+        self.assertIn("/rapor Destek", text)
+
     def test_report_new_violations_only_hides_ok_people(self) -> None:
         from datetime import date, datetime, time
         from zoneinfo import ZoneInfo

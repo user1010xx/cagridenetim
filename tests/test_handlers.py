@@ -1,5 +1,5 @@
 import unittest
-from datetime import time
+from datetime import date, time
 from types import SimpleNamespace
 
 from bot.config import Config
@@ -12,7 +12,9 @@ from bot.handlers import (
     _is_allowed,
     _is_registered_department_chat,
 )
+from bot.handler_utils import date_for_weekday_in_current_week, find_personnel_by_name
 from bot.models import Department, DepartmentRules
+from bot.models import Personnel
 
 
 class HandlerTest(unittest.TestCase):
@@ -168,6 +170,19 @@ class HandlerTest(unittest.TestCase):
         )
 
         self.assertIn("kurallar tanımlı değil", text)
+
+    def test_find_personnel_by_name_matches_exact_name_case_insensitive(self) -> None:
+        personnel = [Personnel(1, 1, "Ayşe Yılmaz", "1001", True)]
+
+        self.assertEqual(find_personnel_by_name(personnel, "ayşe yılmaz"), personnel[0])
+
+    def test_find_personnel_by_name_returns_none_for_unknown_personnel(self) -> None:
+        personnel = [Personnel(1, 1, "Ayşe Yılmaz", "1001", True)]
+
+        self.assertIsNone(find_personnel_by_name(personnel, "Fatma"))
+
+    def test_date_for_weekday_in_current_week(self) -> None:
+        self.assertEqual(date_for_weekday_in_current_week(date(2026, 6, 10), 3), date(2026, 6, 11))
 
 
 def _config(admin_user_ids: set[int]) -> Config:
