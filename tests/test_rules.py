@@ -188,13 +188,25 @@ class RulesTest(unittest.TestCase):
         result = self.evaluate([call("Ali", "13:49", duration=120, extension="1001")], now="14:00")
         self.assertFalse(any("Mola öncesi" in violation for violation in result.violations))
 
-    def test_pre_work_call_gap_crossing_work_start_is_checked(self) -> None:
-        result = self.evaluate([call("Ali", "10:00", extension="1001"), call("Ali", "11:12", extension="1001")])
+    def test_pre_work_call_outside_start_window_then_call_before_work_start_is_not_violation(self) -> None:
+        result = self.evaluate([call("Ali", "10:10", extension="1001"), call("Ali", "11:08", extension="1001")])
+
+        self.assertFalse(any("Çağrı arası" in violation for violation in result.violations))
+
+    def test_pre_work_call_outside_start_window_then_call_after_work_start_is_violation(self) -> None:
+        result = self.evaluate([call("Ali", "10:10", extension="1001"), call("Ali", "11:11", extension="1001")])
+
         self.assertTrue(any("Çağrı arası" in violation for violation in result.violations))
 
-    def test_pre_work_call_near_work_start_is_not_violation(self) -> None:
-        result = self.evaluate([call("Ali", "10:58", extension="1001"), call("Ali", "11:11", extension="1001")])
+    def test_pre_work_call_near_work_start_then_call_at_work_start_is_not_violation(self) -> None:
+        result = self.evaluate([call("Ali", "10:58", extension="1001"), call("Ali", "11:10", extension="1001")])
+
         self.assertFalse(any("Çağrı arası" in violation for violation in result.violations))
+
+    def test_pre_work_call_near_work_start_then_late_call_is_violation(self) -> None:
+        result = self.evaluate([call("Ali", "10:58", extension="1001"), call("Ali", "11:14", extension="1001")])
+
+        self.assertTrue(any("Çağrı arası" in violation for violation in result.violations))
 
     def test_pre_break_free_window_is_excluded_from_gap(self) -> None:
         self.rules = DepartmentRules(

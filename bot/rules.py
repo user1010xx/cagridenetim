@@ -239,6 +239,10 @@ def _check_call_gaps(
     for previous, current in zip(evaluation.calls, evaluation.calls[1:]):
         idle_start = previous.ended_at
         idle_end = min(current.started_at, work_end)
+        if previous.started_at < work_start and _minute_floor(current.started_at) <= work_start:
+            continue
+        if previous.started_at < work_start and idle_start < work_start and _minute_floor(current.started_at) > work_start:
+            idle_start = max(previous.started_at, work_start - timedelta(minutes=rules.max_call_gap_minutes))
         if idle_end <= idle_start:
             continue
         idle_seconds = (idle_end - idle_start).total_seconds()
@@ -269,6 +273,8 @@ def _check_current_idle_gap(
     if last_call is None:
         return
     idle_start = max(last_call.ended_at, work_start)
+    if last_call.started_at < work_start and last_call.ended_at < work_start:
+        idle_start = max(last_call.started_at, work_start - timedelta(minutes=rules.max_call_gap_minutes))
     if idle_end <= idle_start:
         return
     idle_seconds = (idle_end - idle_start).total_seconds()
