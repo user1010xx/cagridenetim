@@ -110,6 +110,57 @@ class DatabaseMigrationTest(unittest.TestCase):
         finally:
             os.remove(path)
 
+    def test_legacy_auto_default_rules_are_marked_unconfigured_once(self) -> None:
+        fd, path = tempfile.mkstemp(suffix=".sqlite3")
+        os.close(fd)
+        try:
+            connection = sqlite3.connect(path)
+            connection.execute(
+                """
+                CREATE TABLE departments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    company_code TEXT NOT NULL,
+                    telegram_chat_id TEXT NOT NULL,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE department_rules (
+                    department_id INTEGER PRIMARY KEY,
+                    work_start_time TEXT,
+                    pre_break_leave_time TEXT,
+                    break_start_time TEXT,
+                    break_end_time TEXT,
+                    post_break_start_time TEXT,
+                    work_end_time TEXT,
+                    max_call_gap_minutes INTEGER
+                )
+                """
+            )
+            connection.execute(
+                "INSERT INTO departments (name, company_code, telegram_chat_id) VALUES (?, ?, ?)",
+                ("Karşılama", "COMPANY", "CHAT"),
+            )
+            connection.execute(
+                "INSERT INTO department_rules VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (1, "11:10", None, "13:50", "15:15", None, "18:50", 15),
+            )
+            connection.commit()
+            connection.close()
+
+            database = Database(path)
+            rules = database.get_rules(1)
+
+            self.assertFalse(rules.is_configured)
+            self.assertIsNone(rules.work_start_time)
+            self.assertIsNone(rules.max_call_gap_minutes)
+        finally:
+            os.remove(path)
+
 
 if __name__ == "__main__":
     unittest.main()

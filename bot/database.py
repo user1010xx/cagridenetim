@@ -57,6 +57,15 @@ class Database:
             self._migrate_department_rules(connection)
             connection.execute(
                 """
+                CREATE TABLE IF NOT EXISTS schema_flags (
+                    name TEXT PRIMARY KEY,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            self._mark_legacy_default_rules_unconfigured(connection)
+            connection.execute(
+                """
                 CREATE TABLE IF NOT EXISTS personnel (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     department_id INTEGER NOT NULL,
@@ -562,6 +571,35 @@ class Database:
         )
         connection.execute("DROP TABLE department_rules")
         connection.execute("ALTER TABLE department_rules_new RENAME TO department_rules")
+
+    @staticmethod
+    def _mark_legacy_default_rules_unconfigured(connection: sqlite3.Connection) -> None:
+        flag_name = "legacy_default_rules_unconfigured"
+        row = connection.execute("SELECT 1 FROM schema_flags WHERE name = ?", (flag_name,)).fetchone()
+        if row is not None:
+            return
+        connection.execute(
+            """
+            UPDATE department_rules
+            SET work_start_time = NULL,
+                pre_break_leave_time = NULL,
+                break_start_time = NULL,
+                break_end_time = NULL,
+                post_break_start_time = NULL,
+                work_end_time = NULL,
+                max_call_gap_minutes = NULL,
+                is_configured = 0
+            WHERE is_configured = 1
+              AND work_start_time = '11:10'
+              AND pre_break_leave_time IS NULL
+              AND break_start_time = '13:50'
+              AND break_end_time = '15:15'
+              AND post_break_start_time IS NULL
+              AND work_end_time = '18:50'
+              AND max_call_gap_minutes = 15
+            """
+        )
+        connection.execute("INSERT INTO schema_flags (name) VALUES (?)", (flag_name,))
 
 
 def _parse_optional_time(value: str | None):
