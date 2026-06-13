@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from bot.config import Config
 from bot.handlers import (
     _can_report_department_in_chat,
+    _can_use_admin_command,
     _departments_visible_in_chat,
     _format_datetime_text,
     _is_allowed,
@@ -81,6 +82,40 @@ class HandlerTest(unittest.TestCase):
         )
 
         self.assertFalse(_is_allowed(update, context))
+
+    def test_group_member_can_use_admin_commands_in_registered_department_group(self) -> None:
+        update = SimpleNamespace(
+            effective_chat=SimpleNamespace(id=-1001, type="group", title="Satış1"),
+            effective_user=SimpleNamespace(id=7),
+        )
+        context = SimpleNamespace(
+            application=SimpleNamespace(
+                bot_data={
+                    "config": _config(admin_user_ids={42}),
+                    "database": SimpleNamespace(
+                        list_departments=lambda: [Department(1, "Satış1", "COMPANY", "-1001", True)]
+                    ),
+                }
+            )
+        )
+
+        self.assertTrue(_can_use_admin_command(update, context))
+
+    def test_non_admin_private_chat_cannot_use_admin_commands(self) -> None:
+        update = SimpleNamespace(
+            effective_chat=SimpleNamespace(id=7, type="private"),
+            effective_user=SimpleNamespace(id=7),
+        )
+        context = SimpleNamespace(
+            application=SimpleNamespace(
+                bot_data={
+                    "config": _config(admin_user_ids={42}),
+                    "database": SimpleNamespace(list_departments=lambda: []),
+                }
+            )
+        )
+
+        self.assertFalse(_can_use_admin_command(update, context))
 
     def test_department_list_in_group_shows_only_group_department(self) -> None:
         update = SimpleNamespace(effective_chat=SimpleNamespace(id=-1002, type="group"))

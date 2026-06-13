@@ -115,13 +115,7 @@ Not: Departman ve kural bilgileri bot veritabanında tutulur; Railway env içine
 
 def admin_only(handler: Callable) -> Callable:
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        config: Config = context.application.bot_data["config"]
-        user = update.effective_user
-        is_admin = user is not None and user.id in config.admin_user_ids
-        if not is_admin:
-            await update.effective_message.reply_text("Bu komut için yetkiniz yok.")
-            return ConversationHandler.END
-        if not _is_allowed(update, context):
+        if not _can_use_admin_command(update, context):
             await update.effective_message.reply_text("Bu botu bu sohbet içinde kullanma yetkiniz yok.")
             return ConversationHandler.END
         return await handler(update, context)
@@ -153,6 +147,17 @@ def _is_allowed(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     if title in config.allowed_group_names:
         return True
     return _is_registered_department_chat(context.application.bot_data.get("database"), chat.id)
+
+
+def _can_use_admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    config: Config = context.application.bot_data["config"]
+    chat = update.effective_chat
+    user = update.effective_user
+    if chat is None:
+        return False
+    if chat.type == "private":
+        return user is not None and user.id in config.admin_user_ids
+    return _is_allowed(update, context)
 
 
 def _is_registered_department_chat(database: Database | None, chat_id: int) -> bool:
