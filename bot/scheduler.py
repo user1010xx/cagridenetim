@@ -14,6 +14,7 @@ from bot.service import generate_department_report_payload
 
 
 logger = logging.getLogger(__name__)
+DEPARTMENT_REPORT_DELAY_SECONDS = 90
 
 
 async def run_scheduler(application: Application) -> None:
@@ -35,7 +36,7 @@ async def send_scheduled_reports(application: Application) -> None:
         logger.info("Zamanlanmış rapor saati dışında: %s", now.strftime("%H:%M"))
         return
     departments = database.list_departments(only_active=True)
-    for department in departments:
+    for index, department in enumerate(departments):
         report = None
         try:
             report = await generate_department_report_payload(
@@ -61,6 +62,8 @@ async def send_scheduled_reports(application: Application) -> None:
                 database.mark_notified_violations(department.id, now.date().isoformat(), report.notification_violations)
         except Exception:
             logger.exception("Zamanlanmış rapor gönderilemedi: %s", department.name)
+        if _should_wait_before_next_department(index, len(departments)):
+            await asyncio.sleep(DEPARTMENT_REPORT_DELAY_SECONDS)
 
 
 async def _send_message_with_retry(application: Application, chat_id: str, text: str) -> None:
@@ -84,3 +87,7 @@ def _seconds_until_next_run(config: Config) -> float:
 def _is_within_report_window(config: Config, now: datetime) -> bool:
     current_time = now.time()
     return config.scheduler_start_time <= current_time <= config.scheduler_end_time
+
+
+def _should_wait_before_next_department(index: int, department_count: int) -> bool:
+    return index < department_count - 1

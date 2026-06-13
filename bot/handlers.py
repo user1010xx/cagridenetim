@@ -96,7 +96,6 @@ Temel komutlar:
 /personeltopluekle - Excel dosyasıyla toplu personel ekler
 /personel_listele Departman
 /personel_sil PersonelID
-/rapor - Aktif tüm departmanları kontrol eder
 /rapor DepartmanAdı veya ID - Tek departman kontrol eder
 /kontrolinvekto DepartmanAdı veya ID - Invekto erişimini test eder
 /izin - Personeli geçici izinli yapar
@@ -146,10 +145,16 @@ def _is_allowed(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
         return False
     if chat.type == "private":
         return user is not None and user.id in config.admin_user_ids
-    if not config.allowed_group_names:
-        return False
     title = (chat.title or "").strip().casefold()
-    return title in config.allowed_group_names
+    if title in config.allowed_group_names:
+        return True
+    return _is_registered_department_chat(context.application.bot_data.get("database"), chat.id)
+
+
+def _is_registered_department_chat(database: Database | None, chat_id: int) -> bool:
+    if database is None:
+        return False
+    return any(department.telegram_chat_id == str(chat_id) for department in database.list_departments())
 
 
 @allowed_only
@@ -857,19 +862,32 @@ async def rapor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     config: Config = context.application.bot_data["config"]
     now = datetime.now(config.timezone)
     args = _plain_args(update)
-    departments = [database.get_department(_identifier(args))] if args else database.list_departments(only_active=True)
-    departments = [department for department in departments if department is not None]
-    if not departments:
-        await update.effective_message.reply_text("Kontrol edilecek departman bulunamadı.")
+    if not args:
+        await update.effective_message.reply_text("Kullanım: /rapor DepartmanAdı veya ID")
+        return
+    department = database.get_department(_identifier(args))
+    if department is None:
+        await update.effective_message.reply_text("Departman bulunamadı.")
+        return
+    if not _can_report_department_in_chat(update, department):
+        await update.effective_message.reply_text("Bu departman raporu sadece kayıtlı Telegram grubunda alınabilir.")
         return
     await update.effective_message.reply_text("Rapor hazırlanıyor...")
-    for department in departments:
-        try:
-            _, message = await generate_department_report(database, client, department.id, now.date(), now)
-        except Exception as exc:
-            message = f"❌ {department.name} raporu alınamadı: {exc}"
-        for part in split_telegram_message(message):
-            await update.effective_message.reply_text(part)
+    try:
+        _, message = await generate_department_report(database, client, department.id, now.date(), now)
+    except Exception as exc:
+        message = f"❌ {department.name} raporu alınamadı: {exc}"
+    for part in split_telegram_message(message):
+        await update.effective_message.reply_text(part)
+
+
+def _can_report_department_in_chat(update: Update, department: Department) -> bool:
+    chat = update.effective_chat
+    if chat is None:
+        return False
+    if chat.type == "private":
+        return True
+    return str(chat.id) == department.telegram_chat_id
 
 
 @admin_only

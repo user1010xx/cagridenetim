@@ -81,7 +81,21 @@ def build_department_report(
     elif not evaluations:
         lines.append("⚠️ Kontrol edilecek personel veya çağrı kaydı bulunamadı.")
 
+    _append_personnel_call_counts(lines, evaluations)
+
     return "\n".join(lines)
+
+
+def _append_personnel_call_counts(lines: list[str], evaluations: list[PersonnelEvaluation]) -> None:
+    if not evaluations:
+        return
+    if lines and lines[-1]:
+        lines.append("")
+    lines.append("☎️ Personel Çağrı Adetleri")
+    for evaluation in evaluations:
+        extension_text = f" ({evaluation.extension})" if evaluation.extension else ""
+        call_count = evaluation.total_call_count if evaluation.total_call_count is not None else len(evaluation.calls)
+        lines.append(f"   • {evaluation.name}{extension_text} - {call_count} çağrı")
 
 
 def _rules_summary(rules: DepartmentRules) -> str:

@@ -104,14 +104,47 @@ class PersonnelImportTest(unittest.TestCase):
         from zoneinfo import ZoneInfo
 
         from bot.models import Department, DepartmentRules
-        from bot.rules import PersonnelEvaluation
+        from bot.rules import CallRecord, PersonnelEvaluation
 
         text = build_department_report(
             department=Department(1, "Destek", "COMPANY", "CHAT", True),
             rules=DepartmentRules(1, time(11, 10), None, None, None, None, None, 15),
             evaluations=[
-                PersonnelEvaluation(name="Ayşe", extension="1001", violations=["Yeni ihlal"]),
-                PersonnelEvaluation(name="Mehmet", extension="1002", violations=[]),
+                PersonnelEvaluation(
+                    name="Ayşe",
+                    extension="1001",
+                    calls=[
+                        CallRecord(
+                            "Ayşe",
+                            "1001",
+                            datetime(2026, 6, 10, 11, 10, tzinfo=ZoneInfo("Europe/Istanbul")),
+                            60,
+                            "1",
+                        )
+                    ],
+                    violations=["Yeni ihlal"],
+                ),
+                PersonnelEvaluation(
+                    name="Mehmet",
+                    extension="1002",
+                    calls=[
+                        CallRecord(
+                            "Mehmet",
+                            "1002",
+                            datetime(2026, 6, 10, 11, 12, tzinfo=ZoneInfo("Europe/Istanbul")),
+                            60,
+                            "1",
+                        ),
+                        CallRecord(
+                            "Mehmet",
+                            "1002",
+                            datetime(2026, 6, 10, 11, 30, tzinfo=ZoneInfo("Europe/Istanbul")),
+                            60,
+                            "1",
+                        ),
+                    ],
+                    violations=[],
+                ),
             ],
             report_date=date(2026, 6, 10),
             now=datetime(2026, 6, 10, 12, 0, tzinfo=ZoneInfo("Europe/Istanbul")),
@@ -124,7 +157,9 @@ class PersonnelImportTest(unittest.TestCase):
         self.assertIn("1 yeni ihlal", text)
         self.assertIn("Ayşe", text)
         self.assertNotIn("Uygun Personeller", text)
-        self.assertNotIn("Mehmet", text)
+        self.assertIn("Personel Çağrı Adetleri", text)
+        self.assertIn("Ayşe (1001) - 1 çağrı", text)
+        self.assertIn("Mehmet (1002) - 2 çağrı", text)
 
     def test_report_new_violations_only_shows_ok_people_when_no_new_violations(self) -> None:
         from datetime import date, datetime, time
@@ -150,6 +185,26 @@ class PersonnelImportTest(unittest.TestCase):
         self.assertNotIn("Uygun Personeller", text)
         self.assertIn("Yeni İhlali Olmayan Personeller", text)
         self.assertIn("Ayşe", text)
+
+    def test_report_personnel_call_counts_use_total_call_count_when_available(self) -> None:
+        from datetime import date, datetime, time
+        from zoneinfo import ZoneInfo
+
+        from bot.models import Department, DepartmentRules
+        from bot.rules import PersonnelEvaluation
+
+        text = build_department_report(
+            department=Department(1, "Destek", "COMPANY", "CHAT", True),
+            rules=DepartmentRules(1, time(11, 10), None, None, None, None, None, 15),
+            evaluations=[PersonnelEvaluation(name="Asu", extension="605", calls=[], violations=[], total_call_count=12)],
+            report_date=date(2026, 6, 10),
+            now=datetime(2026, 6, 10, 12, 0, tzinfo=ZoneInfo("Europe/Istanbul")),
+            raw_call_count=12,
+            processed_call_count=12,
+            personnel=[],
+        )
+
+        self.assertIn("Asu (605) - 12 çağrı", text)
 
 
 if __name__ == "__main__":
