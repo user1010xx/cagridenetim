@@ -231,6 +231,7 @@ class PersonnelImportTest(unittest.TestCase):
         self.assertIn("İzinli Personeller", text)
         self.assertIn("Asu (605)", text)
         self.assertIn("Personel Çağrı Adetleri", text)
+        self.assertIn("Ayşe (1001)", text)
 
     def test_split_telegram_message_splits_long_single_lines(self) -> None:
         from bot.reporting import split_telegram_message

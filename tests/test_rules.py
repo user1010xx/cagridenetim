@@ -274,6 +274,7 @@ class RulesTest(unittest.TestCase):
             leave_periods={"ali": [(dt("11:00"), dt("19:00"))]},
         )[0]
         self.assertEqual(result.violations, [])
+        self.assertTrue(result.is_on_leave)
 
     def test_total_call_count_keeps_calls_filtered_by_leave(self) -> None:
         result = evaluate_department(
@@ -288,6 +289,7 @@ class RulesTest(unittest.TestCase):
 
         self.assertEqual(len(result.calls), 0)
         self.assertEqual(result.total_call_count, 2)
+        self.assertTrue(result.is_on_leave)
 
     def test_normalize_calls_accepts_invekto_grid_fields(self) -> None:
         records = normalize_calls(

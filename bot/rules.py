@@ -128,11 +128,12 @@ def evaluate_department(
         person_calls = _calls_for_person(person, grouped)
         total_call_count = len(person_calls)
         person_leave_periods = _leave_periods_for_person(person, leave_periods or {})
-        if person.name.casefold() in weekly_leave_names:
+        if person.name.casefold() in weekly_leave_names or person_leave_periods:
             evaluations.append(
                 PersonnelEvaluation(
                     name=person.name,
                     extension=person.extension,
+                    leave_periods=person_leave_periods,
                     total_call_count=total_call_count,
                     is_on_leave=True,
                 )

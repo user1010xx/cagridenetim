@@ -53,10 +53,11 @@ def build_department_report(
             ]
         )
     leave_count = sum(1 for evaluation in evaluations if evaluation.is_on_leave)
+    leave_summary = f" | 🟨 {leave_count} izinli personel" if leave_count else ""
     if new_violations_only:
-        lines.append(f"Özet: {'❌' if violation_count else '✅'} {violation_count} yeni ihlal | 🟨 {leave_count} izinli personel")
+        lines.append(f"Özet: {'❌' if violation_count else '✅'} {violation_count} yeni ihlal{leave_summary}")
     else:
-        lines.append(f"Özet: {'❌' if violation_count else '✅'} {violation_count} ihlal | 🟨 {leave_count} izinli personel")
+        lines.append(f"Özet: {'❌' if violation_count else '✅'} {violation_count} ihlal{leave_summary}")
     lines.append("")
 
     if violation_count:
