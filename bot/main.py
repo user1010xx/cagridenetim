@@ -14,6 +14,7 @@ from bot.handlers import (
     COMPANY_CODE_VALUE,
     DEPARTMENT_ADD_COMPANY_CODE,
     DEPARTMENT_ADD_NAME,
+    DEPARTMENT_DELETE_IDENTIFIER,
     LEAVE_CANCEL_DEPARTMENT,
     LEAVE_CANCEL_PERSONNEL,
     LEAVE_DEPARTMENT,
@@ -40,7 +41,8 @@ from bot.handlers import (
     departmanekle_start,
     departman_listele,
     departman_pasif,
-    departman_sil,
+    departman_sil_identifier,
+    departman_sil_start,
     haftalikizin_day,
     haftalikizin_department,
     haftalikizin_personnel,
@@ -142,7 +144,15 @@ def build_application() -> Application:
         )
     )
     application.add_handler(CommandHandler("departman_listele", departman_listele))
-    application.add_handler(CommandHandler("departman_sil", departman_sil))
+    application.add_handler(
+        ConversationHandler(
+            entry_points=[CommandHandler("departman_sil", departman_sil_start)],
+            states={
+                DEPARTMENT_DELETE_IDENTIFIER: [MessageHandler(filters.TEXT & ~filters.COMMAND, departman_sil_identifier)],
+            },
+            fallbacks=[CommandHandler("iptal", kuralayarla_cancel)],
+        )
+    )
     application.add_handler(CommandHandler("departman_aktif", departman_aktif))
     application.add_handler(CommandHandler("departman_pasif", departman_pasif))
     application.add_handler(

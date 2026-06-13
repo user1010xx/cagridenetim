@@ -52,6 +52,7 @@ WEEKLY_LEAVE_DAY = next(_STATE_COUNTER)
 WEEKLY_LEAVE_CANCEL_DEPARTMENT = next(_STATE_COUNTER)
 WEEKLY_LEAVE_CANCEL_PERSONNEL = next(_STATE_COUNTER)
 WEEKLY_LEAVE_CANCEL_DAY = next(_STATE_COUNTER)
+DEPARTMENT_DELETE_IDENTIFIER = next(_STATE_COUNTER)
 
 
 WEEKDAY_NAMES = {
@@ -246,8 +247,20 @@ def _departments_visible_in_chat(update: Update, departments: list[Department]) 
 
 
 @admin_only
-async def departman_sil(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await _delete_or_toggle_department(update, context, "delete")
+async def departman_sil_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    args = _plain_args(update)
+    if args:
+        await _delete_or_toggle_department(update, context, "delete", args)
+        return ConversationHandler.END
+    context.user_data["department_delete"] = {}
+    await update.effective_message.reply_text("Departman adı veya ID gönderin.")
+    return DEPARTMENT_DELETE_IDENTIFIER
+
+
+async def departman_sil_identifier(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await _delete_or_toggle_department(update, context, "delete", _message_text(update))
+    context.user_data.pop("department_delete", None)
+    return ConversationHandler.END
 
 
 @admin_only
@@ -944,9 +957,9 @@ async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.effective_message.reply_text("Bilinmeyen komut. /start ile komut listesini görebilirsin.")
 
 
-async def _delete_or_toggle_department(update: Update, context: ContextTypes.DEFAULT_TYPE, action: str) -> None:
+async def _delete_or_toggle_department(update: Update, context: ContextTypes.DEFAULT_TYPE, action: str, identifier_text: str | None = None) -> None:
     database: Database = context.application.bot_data["database"]
-    args = _plain_args(update)
+    args = identifier_text if identifier_text is not None else _plain_args(update)
     if not args:
         await update.effective_message.reply_text("Departman adı veya ID gönderin.")
         return
