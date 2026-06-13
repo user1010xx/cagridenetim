@@ -1,4 +1,5 @@
 import unittest
+from datetime import time
 from types import SimpleNamespace
 
 from bot.config import Config
@@ -7,10 +8,11 @@ from bot.handlers import (
     _can_use_admin_command,
     _departments_visible_in_chat,
     _format_datetime_text,
+    _format_rules_list,
     _is_allowed,
     _is_registered_department_chat,
 )
-from bot.models import Department
+from bot.models import Department, DepartmentRules
 
 
 class HandlerTest(unittest.TestCase):
@@ -148,6 +150,24 @@ class HandlerTest(unittest.TestCase):
 
     def test_format_datetime_text_converts_to_config_timezone(self) -> None:
         self.assertEqual(_format_datetime_text("2026-06-10T08:00:00+00:00", _config({42})), "10.06.2026 11:00")
+
+    def test_format_rules_list_shows_configured_rules(self) -> None:
+        text = _format_rules_list(
+            Department(1, "Satış1", "COMPANY", "-1001", True),
+            DepartmentRules(1, time(11, 10), time(13, 50), time(14, 0), time(15, 0), time(15, 15), time(18, 50), 15),
+        )
+
+        self.assertIn("Departman: Satış1", text)
+        self.assertIn("Mesai başlangıcı: 11:10", text)
+        self.assertIn("Max bekleme: 15 dk", text)
+
+    def test_format_rules_list_explains_unconfigured_rules(self) -> None:
+        text = _format_rules_list(
+            Department(1, "Satış1", "COMPANY", "-1001", True),
+            DepartmentRules(1, None, None, None, None, None, None, None, False),
+        )
+
+        self.assertIn("kurallar tanımlı değil", text)
 
 
 def _config(admin_user_ids: set[int]) -> Config:

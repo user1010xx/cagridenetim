@@ -12,7 +12,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 from bot.config import Config
 from bot.database import Database
 from bot.invekto_client import InvektoClient
-from bot.models import Department, Personnel
+from bot.models import Department, DepartmentRules, Personnel
 from bot.personnel_import import PersonnelImportRow, parse_personnel_workbook
 from bot.reporting import split_telegram_message
 from bot.service import generate_department_report
@@ -93,6 +93,7 @@ Temel komutlar:
 /companycodeayarla - CompanyCode değerini adım adım günceller
 /chatayarla - Rapor chat ID değerini adım adım günceller
 /kuralayarla - Kuralları adım adım tanımlar
+/kurallistele DepartmanAdı veya ID - Departman kurallarını gösterir
 /personelekle - Personeli adım adım ekler
 /personeltopluekle - Excel dosyasıyla toplu personel ekler
 /personel_listele Departman
@@ -955,6 +956,24 @@ async def rapor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.effective_message.reply_text(part)
 
 
+@allowed_only
+async def kurallistele(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    database: Database = context.application.bot_data["database"]
+    args = _plain_args(update)
+    if not args:
+        await update.effective_message.reply_text("Kullanım: /kurallistele DepartmanAdı veya ID")
+        return
+    department = database.get_department(_identifier(args))
+    if department is None:
+        await update.effective_message.reply_text("Departman bulunamadı.")
+        return
+    if not _can_report_department_in_chat(update, department):
+        await update.effective_message.reply_text("Bu departman kuralları sadece kayıtlı Telegram grubunda görüntülenebilir.")
+        return
+    rules = database.get_rules(department.id)
+    await update.effective_message.reply_text(_format_rules_list(department, rules))
+
+
 def _can_report_department_in_chat(update: Update, department: Department) -> bool:
     chat = update.effective_chat
     if chat is None:
@@ -962,6 +981,32 @@ def _can_report_department_in_chat(update: Update, department: Department) -> bo
     if chat.type == "private":
         return True
     return str(chat.id) == department.telegram_chat_id
+
+
+def _format_rules_list(department: Department, rules: DepartmentRules) -> str:
+    if not rules.is_configured:
+        return f"⚠️ {department.name} için kurallar tanımlı değil. Önce /kuralayarla ile kuralları giriniz."
+    return "\n".join(
+        [
+            "⚙️ Departman Kuralları",
+            f"🏢 Departman: {department.name}",
+            f"Mesai başlangıcı: {_format_optional_rule_time(rules.work_start_time)}",
+            f"Max bekleme: {_format_optional_minutes(rules.max_call_gap_minutes)}",
+            f"Mola öncesi bırakma: {_format_optional_rule_time(rules.pre_break_leave_time)}",
+            f"Mola başlangıcı: {_format_optional_rule_time(rules.break_start_time)}",
+            f"Mola bitişi: {_format_optional_rule_time(rules.break_end_time)}",
+            f"Mola sonrası başlangıç: {_format_optional_rule_time(rules.post_break_start_time)}",
+            f"Mesai sonu: {_format_optional_rule_time(rules.work_end_time)}",
+        ]
+    )
+
+
+def _format_optional_rule_time(value) -> str:
+    return value.strftime("%H:%M") if value else "kapalı"
+
+
+def _format_optional_minutes(value: int | None) -> str:
+    return f"{value} dk" if value is not None else "kapalı"
 
 
 @admin_only

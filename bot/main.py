@@ -61,6 +61,7 @@ from bot.handlers import (
     iziniptal_start,
     kimim,
     kontrolinvekto,
+    kurallistele,
     kuralayarla_break_interval,
     kuralayarla_cancel,
     kuralayarla_department,
@@ -285,6 +286,7 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("personel_listele", personel_listele))
     application.add_handler(CommandHandler("personel_sil", personel_sil))
     application.add_handler(CommandHandler("izinlistele", izinlistele))
+    application.add_handler(CommandHandler("kurallistele", kurallistele))
     application.add_handler(CommandHandler("rapor", rapor))
     application.add_handler(CommandHandler("kontrolinvekto", kontrolinvekto))
     application.add_handler(MessageHandler(filters.COMMAND, unknown))
