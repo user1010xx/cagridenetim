@@ -10,6 +10,48 @@ from bot.models import DepartmentRules, Personnel
 from bot.time_utils import format_time, parse_date, parse_datetime, parse_time
 
 
+EXTENSION_NAME_FIELDS = (
+    "CompletedExtensionName",
+    "CompletedExtName",
+    "CompletedDirectName",
+    "CompletedName",
+    "ExtensionName",
+    "ExtName",
+    "DirectName",
+    "AgentName",
+    "Agent",
+    "DestinationName",
+    "DstName",
+    "UserName",
+    "Name",
+    "DAHİLİ ADI",
+    "DAHILI ADI",
+    "DAHİLİ İSMİ",
+    "DAHILI ISMI",
+)
+EXTENSION_NUMBER_FIELDS = (
+    "CompletedExtension",
+    "CompletedExt",
+    "CompletedDirect",
+    "CompletedExtensionNumber",
+    "CompletedExtNumber",
+    "Extension",
+    "Ext",
+    "ExtensionNumber",
+    "ExtNumber",
+    "Direct",
+    "DirectNumber",
+    "Destination",
+    "DestinationExtension",
+    "Dst",
+    "DstExtension",
+    "AgentExtension",
+    "Dahili",
+    "DAHİLİ",
+    "DAHILI",
+)
+
+
 @dataclass(frozen=True)
 class CallRecord:
     extension_name: str
@@ -48,10 +90,7 @@ def normalize_calls(raw_calls: list[dict[str, object]], timezone: ZoneInfo) -> l
         raw_extension_name = (
             _first_value(
                 item,
-                "CompletedExtensionName",
-                "ExtensionName",
-                "DAHİLİ ADI",
-                "DAHILI ADI",
+                *EXTENSION_NAME_FIELDS,
                 fuzzy=False,
             )
             or "Bilinmeyen"
@@ -60,12 +99,7 @@ def normalize_calls(raw_calls: list[dict[str, object]], timezone: ZoneInfo) -> l
         extension = _clean_optional_text(
             _first_value(
                 item,
-                "CompletedExtension",
-                "Extension",
-                "Direct",
-                "Dahili",
-                "DAHİLİ",
-                "DAHILI",
+                *EXTENSION_NUMBER_FIELDS,
                 fuzzy=False,
             )
         )
@@ -643,6 +677,10 @@ def _extension_from_text(value: object) -> str | None:
     parenthesized = re.search(r"\(\s*(\d+(?:[.,]0+)?)\s*\)", text)
     if parenthesized:
         return _normalize_extension(parenthesized.group(1))
+    text_without_dates = re.sub(r"\d{1,4}[-./]\d{1,2}[-./]\d{1,4}", " ", text)
+    standalone = re.search(r"(?<!\d)(\d{3,6}(?:[.,]0+)?)(?!\d)", text_without_dates)
+    if standalone:
+        return _normalize_extension(standalone.group(1))
     return None
 
 
