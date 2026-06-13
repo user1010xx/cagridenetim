@@ -71,7 +71,7 @@ def build_department_report(
 
     ok_people = [] if new_violations_only and violation_count else [evaluation for evaluation in evaluations if not evaluation.violations]
     if ok_people:
-        lines.append("✅ Uygun Personeller")
+        lines.append("✅ Yeni İhlali Olmayan Personeller" if new_violations_only else "✅ Uygun Personeller")
         for evaluation in ok_people:
             extension_text = f" ({evaluation.extension})" if evaluation.extension else ""
             lines.append(f"   • {evaluation.name}{extension_text} - {len(evaluation.calls)} çağrı")

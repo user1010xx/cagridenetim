@@ -147,7 +147,8 @@ class PersonnelImportTest(unittest.TestCase):
 
         self.assertIn("0 yeni ihlal", text)
         self.assertIn("Yeni ihlal yok", text)
-        self.assertIn("Uygun Personeller", text)
+        self.assertNotIn("Uygun Personeller", text)
+        self.assertIn("Yeni İhlali Olmayan Personeller", text)
         self.assertIn("Ayşe", text)
 
 
