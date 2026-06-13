@@ -143,8 +143,10 @@ def _is_allowed(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     user = update.effective_user
     if chat is None:
         return False
+    if user is not None and user.id in config.admin_user_ids:
+        return True
     if chat.type == "private":
-        return user is not None and user.id in config.admin_user_ids
+        return False
     title = (chat.title or "").strip().casefold()
     if title in config.allowed_group_names:
         return True
