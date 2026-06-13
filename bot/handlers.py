@@ -47,10 +47,8 @@ RESPONSIBLE_DELETE_DEPARTMENT = next(_STATE_COUNTER)
 RESPONSIBLE_DELETE_USERNAME = next(_STATE_COUNTER)
 RESPONSIBLE_LIST_DEPARTMENT = next(_STATE_COUNTER)
 WEEKLY_LEAVE_DEPARTMENT = next(_STATE_COUNTER)
-WEEKLY_LEAVE_PERSONNEL = next(_STATE_COUNTER)
 WEEKLY_LEAVE_DAY = next(_STATE_COUNTER)
 WEEKLY_LEAVE_CANCEL_DEPARTMENT = next(_STATE_COUNTER)
-WEEKLY_LEAVE_CANCEL_PERSONNEL = next(_STATE_COUNTER)
 WEEKLY_LEAVE_CANCEL_DAY = next(_STATE_COUNTER)
 DEPARTMENT_DELETE_IDENTIFIER = next(_STATE_COUNTER)
 
@@ -103,9 +101,9 @@ Temel komutlar:
 /izin - Personeli geçici izinli yapar
 /iziniptal - Geçici izni bitirir
 /izinlistele - Tüm izinli personelleri listeler
-/haftalikizin - Haftalık izin ekler
-/haftalikizinduzenle - Haftalık izni yeniden düzenler
-/haftalikiziniptal - Haftalık izni kaldırır
+/haftalikizin - Departmanın haftalık rapor izin gününü ekler
+/haftalikizinduzenle - Departmanın haftalık rapor izin gününü yeniden düzenler
+/haftalikiziniptal - Departmanın haftalık rapor izin gününü kaldırır
 /sorumluekle - Departman sorumlusu ekler
 /sorumlusil - Departman sorumlusu siler
 /sorumlulistele - Departman sorumlularını listeler
@@ -705,7 +703,8 @@ async def izinlistele(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     for department in departments:
         active_leaves = database.list_active_leave_periods(department.id, current_at)
         weekly_leaves = database.list_weekly_leaves(department.id)
-        if not active_leaves and not weekly_leaves:
+        department_weekly_leaves = database.list_department_weekly_leaves(department.id)
+        if not active_leaves and not weekly_leaves and not department_weekly_leaves:
             continue
         has_leave = True
         lines.append("")
@@ -715,10 +714,15 @@ async def izinlistele(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             for leave in active_leaves:
                 lines.append(f"   • {leave['personnel_name']} - başlangıç {_format_datetime_text(str(leave['start_at']), config)}")
         if weekly_leaves:
-            lines.append("Haftalık izinler:")
+            lines.append("Haftalık personel izinleri:")
             for leave in weekly_leaves:
                 weekday = WEEKDAY_LABELS.get(int(leave["weekday"]), str(leave["weekday"]))
                 lines.append(f"   • {leave['personnel_name']} - {weekday}")
+        if department_weekly_leaves:
+            lines.append("Departman haftalık rapor izinleri:")
+            for leave in department_weekly_leaves:
+                weekday = WEEKDAY_LABELS.get(int(leave["weekday"]), str(leave["weekday"]))
+                lines.append(f"   • {weekday} - saatlik otomatik rapor gönderilmez")
     if not has_leave:
         await update.effective_message.reply_text("Aktif izinli personel bulunamadı.")
         return
@@ -838,18 +842,7 @@ async def haftalikizin_department(update: Update, context: ContextTypes.DEFAULT_
         return WEEKLY_LEAVE_DEPARTMENT
     context.user_data["weekly_leave"] = {"department": department}
     await update.effective_message.reply_text("Ayarlandı.")
-    await update.effective_message.reply_text("Haftalık izinli personel adını giriniz.")
-    return WEEKLY_LEAVE_PERSONNEL
-
-
-async def haftalikizin_personnel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    personnel_name = _message_text(update)
-    if not personnel_name:
-        await update.effective_message.reply_text("Personel adı boş olamaz.")
-        return WEEKLY_LEAVE_PERSONNEL
-    context.user_data["weekly_leave"]["personnel_name"] = personnel_name
-    await update.effective_message.reply_text("Ayarlandı.")
-    await update.effective_message.reply_text("Haftalık izin gününü giriniz. Örnek: pazartesi")
+    await update.effective_message.reply_text("Haftalık rapor izin gününü giriniz. Örnek: pazartesi")
     return WEEKLY_LEAVE_DAY
 
 
@@ -857,18 +850,19 @@ async def haftalikizin_day(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     database: Database = context.application.bot_data["database"]
     setup = context.user_data.get("weekly_leave", {})
     department = setup.get("department")
-    personnel_name = setup.get("personnel_name")
     weekday = _parse_weekday(_message_text(update))
-    if department is None or not personnel_name:
+    if department is None:
         await update.effective_message.reply_text("Haftalık izin oturumu bulunamadı. Lütfen /haftalikizin ile tekrar başlayın.")
         return ConversationHandler.END
     if weekday is None:
         await update.effective_message.reply_text("Gün adı geçersiz. Örnek: pazartesi")
         return WEEKLY_LEAVE_DAY
-    database.add_weekly_leave(department.id, personnel_name, weekday)
+    database.add_department_weekly_leave(department.id, weekday)
     context.user_data.pop("weekly_leave", None)
     await update.effective_message.reply_text("Ayarlandı.")
-    await update.effective_message.reply_text(f"✅ {personnel_name} için haftalık izin günü {WEEKDAY_LABELS[weekday]} olarak kaydedildi.")
+    await update.effective_message.reply_text(
+        f"✅ {department.name} için {WEEKDAY_LABELS[weekday]} günü saatlik otomatik rapor kapatıldı. Manuel /rapor çalışmaya devam eder."
+    )
     return ConversationHandler.END
 
 
@@ -887,17 +881,6 @@ async def haftalikiziniptal_department(update: Update, context: ContextTypes.DEF
         return WEEKLY_LEAVE_CANCEL_DEPARTMENT
     context.user_data["weekly_leave_cancel"] = {"department": department}
     await update.effective_message.reply_text("Ayarlandı.")
-    await update.effective_message.reply_text("Haftalık izni iptal edilecek personel adını giriniz.")
-    return WEEKLY_LEAVE_CANCEL_PERSONNEL
-
-
-async def haftalikiziniptal_personnel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    personnel_name = _message_text(update)
-    if not personnel_name:
-        await update.effective_message.reply_text("Personel adı boş olamaz.")
-        return WEEKLY_LEAVE_CANCEL_PERSONNEL
-    context.user_data["weekly_leave_cancel"]["personnel_name"] = personnel_name
-    await update.effective_message.reply_text("Ayarlandı.")
     await update.effective_message.reply_text("İptal edilecek izin gününü giriniz. Tüm günleri silmek için boş yazınız.")
     return WEEKLY_LEAVE_CANCEL_DAY
 
@@ -906,8 +889,7 @@ async def haftalikiziniptal_day(update: Update, context: ContextTypes.DEFAULT_TY
     database: Database = context.application.bot_data["database"]
     setup = context.user_data.get("weekly_leave_cancel", {})
     department = setup.get("department")
-    personnel_name = setup.get("personnel_name")
-    if department is None or not personnel_name:
+    if department is None:
         await update.effective_message.reply_text("Haftalık izin iptal oturumu bulunamadı. Lütfen /haftalikiziniptal ile tekrar başlayın.")
         return ConversationHandler.END
     text = _message_text(update)
@@ -915,12 +897,12 @@ async def haftalikiziniptal_day(update: Update, context: ContextTypes.DEFAULT_TY
     if weekday is None and not _is_blank_rule(text):
         await update.effective_message.reply_text("Gün adı geçersiz. Örnek: pazartesi veya boş")
         return WEEKLY_LEAVE_CANCEL_DAY
-    if not database.delete_weekly_leave(department.id, personnel_name, weekday):
+    if not database.delete_department_weekly_leave(department.id, weekday):
         await update.effective_message.reply_text("Haftalık izin kaydı bulunamadı.")
         return WEEKLY_LEAVE_CANCEL_DAY
     context.user_data.pop("weekly_leave_cancel", None)
     await update.effective_message.reply_text("Ayarlandı.")
-    await update.effective_message.reply_text(f"✅ {personnel_name} haftalık izin kaydı iptal edildi.")
+    await update.effective_message.reply_text(f"✅ {department.name} haftalık rapor izin kaydı iptal edildi.")
     return ConversationHandler.END
 
 

@@ -99,6 +99,35 @@ class DatabaseMigrationTest(unittest.TestCase):
         finally:
             os.remove(path)
 
+    def test_department_weekly_leave_is_separate_from_personnel_weekly_leaves(self) -> None:
+        fd, path = tempfile.mkstemp(suffix=".sqlite3")
+        os.close(fd)
+        try:
+            database = Database(path)
+            department = database.add_department("Destek", "COMPANY", "CHAT")
+            database.add_weekly_leave(department.id, "Ayşe", 1)
+            database.add_department_weekly_leave(department.id, 3)
+
+            self.assertEqual([str(row["personnel_name"]) for row in database.list_weekly_leaves(department.id)], ["Ayşe"])
+            self.assertEqual([int(row["weekday"]) for row in database.list_department_weekly_leaves(department.id)], [3])
+            self.assertTrue(database.is_department_weekly_leave(department.id, 3))
+            self.assertFalse(database.is_department_weekly_leave(department.id, 4))
+        finally:
+            os.remove(path)
+
+    def test_department_weekly_leave_update_replaces_previous_day(self) -> None:
+        fd, path = tempfile.mkstemp(suffix=".sqlite3")
+        os.close(fd)
+        try:
+            database = Database(path)
+            department = database.add_department("Destek", "COMPANY", "CHAT")
+            database.add_department_weekly_leave(department.id, 1)
+            database.add_department_weekly_leave(department.id, 3)
+
+            self.assertEqual([int(row["weekday"]) for row in database.list_department_weekly_leaves(department.id)], [3])
+        finally:
+            os.remove(path)
+
     def test_new_department_starts_without_configured_rules(self) -> None:
         fd, path = tempfile.mkstemp(suffix=".sqlite3")
         os.close(fd)

@@ -8,6 +8,9 @@ from bot.models import Department, DepartmentResponsible, DepartmentRules, Perso
 from bot.time_utils import format_time, parse_hhmm
 
 
+DEPARTMENT_WEEKLY_LEAVE_NAME = "__department__"
+
+
 class Database:
     def __init__(self, path: str) -> None:
         self.path = path
@@ -398,6 +401,24 @@ class Database:
             )
         return True
 
+    def add_department_weekly_leave(self, department_identifier: str | int, weekday: int) -> bool:
+        department = self.get_department(department_identifier)
+        if department is None:
+            return False
+        with self.connect() as connection:
+            connection.execute(
+                "DELETE FROM weekly_leaves WHERE department_id = ? AND personnel_name = ?",
+                (department.id, DEPARTMENT_WEEKLY_LEAVE_NAME),
+            )
+            connection.execute(
+                """
+                INSERT OR REPLACE INTO weekly_leaves (department_id, personnel_name, weekday)
+                VALUES (?, ?, ?)
+                """,
+                (department.id, DEPARTMENT_WEEKLY_LEAVE_NAME, int(weekday)),
+            )
+        return True
+
     def delete_weekly_leave(self, department_identifier: str | int, personnel_name: str, weekday: int | None = None) -> bool:
         department = self.get_department(department_identifier)
         if department is None:
@@ -411,13 +432,57 @@ class Database:
             cursor = connection.execute(query, params)
         return cursor.rowcount > 0
 
+    def delete_department_weekly_leave(self, department_identifier: str | int, weekday: int | None = None) -> bool:
+        department = self.get_department(department_identifier)
+        if department is None:
+            return False
+        query = "DELETE FROM weekly_leaves WHERE department_id = ? AND personnel_name = ?"
+        params: tuple[object, ...] = (department.id, DEPARTMENT_WEEKLY_LEAVE_NAME)
+        if weekday is not None:
+            query += " AND weekday = ?"
+            params = (department.id, DEPARTMENT_WEEKLY_LEAVE_NAME, int(weekday))
+        with self.connect() as connection:
+            cursor = connection.execute(query, params)
+        return cursor.rowcount > 0
+
     def list_weekly_leaves(self, department_id: int) -> list[sqlite3.Row]:
         with self.connect() as connection:
             rows = connection.execute(
-                "SELECT * FROM weekly_leaves WHERE department_id = ? ORDER BY personnel_name, weekday",
-                (department_id,),
+                """
+                SELECT * FROM weekly_leaves
+                WHERE department_id = ?
+                  AND personnel_name <> ?
+                ORDER BY personnel_name, weekday
+                """,
+                (department_id, DEPARTMENT_WEEKLY_LEAVE_NAME),
             ).fetchall()
         return rows
+
+    def list_department_weekly_leaves(self, department_id: int) -> list[sqlite3.Row]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM weekly_leaves
+                WHERE department_id = ?
+                  AND personnel_name = ?
+                ORDER BY weekday
+                """,
+                (department_id, DEPARTMENT_WEEKLY_LEAVE_NAME),
+            ).fetchall()
+        return rows
+
+    def is_department_weekly_leave(self, department_id: int, weekday: int) -> bool:
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT 1 FROM weekly_leaves
+                WHERE department_id = ?
+                  AND personnel_name = ?
+                  AND weekday = ?
+                """,
+                (department_id, DEPARTMENT_WEEKLY_LEAVE_NAME, int(weekday)),
+            ).fetchone()
+        return row is not None
 
     def add_responsible(self, department_identifier: str | int, username: str) -> bool:
         department = self.get_department(department_identifier)

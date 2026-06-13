@@ -39,6 +39,9 @@ async def send_scheduled_reports(application: Application) -> None:
     for index, department in enumerate(departments):
         report = None
         try:
+            if database.is_department_weekly_leave(department.id, now.weekday()):
+                logger.info("Departman haftalık izinli, zamanlanmış rapor atlandı: %s", department.name)
+                continue
             if not database.get_rules(department.id).is_configured:
                 logger.info("Departman kuralları tanımlı değil, zamanlanmış rapor atlandı: %s", department.name)
                 continue
