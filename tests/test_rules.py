@@ -434,6 +434,22 @@ class RulesTest(unittest.TestCase):
         self.assertEqual(records[0].extension_name, "Bilinmeyen")
         self.assertEqual(records[0].extension, "1001")
 
+    def test_normalize_calls_extracts_extension_from_name_parentheses(self) -> None:
+        records = normalize_calls(
+            [
+                {
+                    "Date": "2026-06-09",
+                    "Time": "11:45:40",
+                    "CallTimeSecond": "5",
+                    "ExtensionName": "Alaz (310)",
+                }
+            ],
+            TZ,
+        )
+
+        self.assertEqual(records[0].extension_name, "Alaz")
+        self.assertEqual(records[0].extension, "310")
+
     def test_evaluate_department_ignores_api_people_outside_department_personnel(self) -> None:
         result = evaluate_department(
             [
@@ -460,6 +476,20 @@ class RulesTest(unittest.TestCase):
         )
 
         self.assertEqual(result[0].name, "Alaz")
+        self.assertEqual(len(result[0].calls), 1)
+        self.assertEqual(result[0].total_call_count, 1)
+
+    def test_evaluate_department_matches_cleaned_api_name_to_personnel_name(self) -> None:
+        result = evaluate_department(
+            [CallRecord("Alaz (310)", None, dt("11:30"), 60, "1")],
+            [Personnel(id=1, department_id=1, name="alaz", extension="310", is_active=True)],
+            self.rules,
+            self.report_date,
+            dt("11:40"),
+            TZ,
+        )
+
+        self.assertEqual(result[0].name, "alaz")
         self.assertEqual(len(result[0].calls), 1)
         self.assertEqual(result[0].total_call_count, 1)
 

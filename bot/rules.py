@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 from difflib import SequenceMatcher
+import re
 from zoneinfo import ZoneInfo
 
 from bot.models import DepartmentRules, Personnel
@@ -44,7 +45,7 @@ def normalize_calls(raw_calls: list[dict[str, object]], timezone: ZoneInfo) -> l
         started_at = _call_started_at(item, timezone)
         if started_at is None:
             continue
-        extension_name = _clean_extension_name(
+        raw_extension_name = (
             _first_value(
                 item,
                 "CompletedExtensionName",
@@ -55,21 +56,25 @@ def normalize_calls(raw_calls: list[dict[str, object]], timezone: ZoneInfo) -> l
             )
             or "Bilinmeyen"
         )
+        extension_name = _clean_extension_name(raw_extension_name)
+        extension = _clean_optional_text(
+            _first_value(
+                item,
+                "CompletedExtension",
+                "Extension",
+                "Direct",
+                "Dahili",
+                "DAHİLİ",
+                "DAHILI",
+                fuzzy=False,
+            )
+        )
+        if extension is None:
+            extension = _extension_from_text(raw_extension_name)
         records.append(
             CallRecord(
                 extension_name=extension_name,
-                extension=_clean_optional_text(
-                    _first_value(
-                        item,
-                        "CompletedExtension",
-                        "Extension",
-                        "Direct",
-                        "Dahili",
-                        "DAHİLİ",
-                        "DAHILI",
-                        fuzzy=False,
-                    )
-                ),
+                extension=extension,
                 started_at=started_at,
                 duration_seconds=duration,
                 event_type=event_type or "1",
@@ -150,12 +155,14 @@ def _group_calls(calls: list[CallRecord], personnel: list[Personnel]) -> dict[st
         for person in personnel
         if _normalize_extension(person.extension)
     }
-    known_names = {person.name.casefold(): person.name for person in personnel}
+    known_names = {_normalize_person_name(person.name): person.name for person in personnel}
     grouped: dict[str, list[CallRecord]] = {}
     for call in calls:
-        name = extension_to_name.get(_normalize_extension(call.extension))
+        call_extension = _normalize_extension(call.extension) or _normalize_extension(_extension_from_text(call.extension_name))
+        name = extension_to_name.get(call_extension)
         if name is None:
-            name = known_names.get(call.extension_name.casefold(), call.extension_name)
+            clean_call_name = _clean_extension_name(call.extension_name)
+            name = known_names.get(_normalize_person_name(clean_call_name), clean_call_name)
         grouped.setdefault(name, []).append(call)
     return grouped
 
@@ -603,8 +610,10 @@ def _duration_to_seconds(value: object) -> int:
 
 def _clean_extension_name(value: object) -> str:
     text = str(value or "").strip()
+    text = re.sub(r"\s*\(\s*\d+(?:[.,]0+)?\s*\)\s*", " ", text)
     if " -" in text:
         text = text.split(" -", 1)[0].strip()
+    text = " ".join(text.split())
     return text or "Bilinmeyen"
 
 
@@ -627,6 +636,18 @@ def _normalize_extension(value: object | None) -> str:
     if number.is_integer():
         return str(int(number))
     return "".join(normalized.split())
+
+
+def _extension_from_text(value: object) -> str | None:
+    text = str(value or "")
+    parenthesized = re.search(r"\(\s*(\d+(?:[.,]0+)?)\s*\)", text)
+    if parenthesized:
+        return _normalize_extension(parenthesized.group(1))
+    return None
+
+
+def _normalize_person_name(value: object) -> str:
+    return _normalize_key(value)
 
 
 def _normalize_key(value: object) -> str:
