@@ -488,6 +488,7 @@ async def kuralayarla_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE)
     for key in (
         "leave_setup",
         "leave_cancel_setup",
+        "personnel_delete",
         "responsible_add",
         "responsible_delete",
         "responsible_list",
@@ -632,6 +633,7 @@ async def personel_sil_name(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     department = setup.get("department")
     if department is None:
         await update.effective_message.reply_text("Personel silme oturumu bulunamadı. Lütfen /personel_sil ile tekrar başlayın.")
+        context.user_data.pop("personnel_delete", None)
         return ConversationHandler.END
     personnel = find_personnel_by_name(database.list_personnel(department.id, only_active=False), _message_text(update))
     if personnel is None:
@@ -639,6 +641,7 @@ async def personel_sil_name(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return PERSONNEL_DELETE_NAME
     if not database.delete_personnel(personnel.id):
         await update.effective_message.reply_text("Personel silinemedi.")
+        context.user_data.pop("personnel_delete", None)
         return PERSONNEL_DELETE_NAME
     context.user_data.pop("personnel_delete", None)
     await update.effective_message.reply_text(f"✅ Personel silindi: {personnel.name}")
@@ -926,6 +929,9 @@ async def haftalikiziniptal_day(update: Update, context: ContextTypes.DEFAULT_TY
     config: Config = context.application.bot_data["config"]
     today = datetime.now(config.timezone).date()
     cancel_date = date_for_weekday_in_current_week(today, weekday).isoformat()
+    if date_for_weekday_in_current_week(today, weekday) < today:
+        await update.effective_message.reply_text("Bu gün bu hafta geçti. İptal kaydı eklense bile geçmiş kontrolü değiştirmez.")
+        return WEEKLY_LEAVE_CANCEL_DAY
     active_leave = database.is_department_weekly_leave(department.id, weekday, cancel_date)
     if not active_leave:
         await update.effective_message.reply_text("Haftalık izin kaydı bulunamadı.")

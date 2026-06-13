@@ -8,6 +8,9 @@ from bot.models import Department, DepartmentResponsible, DepartmentRules, Perso
 from bot.time_utils import format_time, parse_hhmm
 
 
+LEGACY_DEPARTMENT_WEEKLY_LEAVE_NAME = "__department__"
+
+
 class Database:
     def __init__(self, path: str) -> None:
         self.path = path
@@ -415,10 +418,6 @@ class Database:
             return False
         with self.connect() as connection:
             connection.execute(
-                "DELETE FROM department_weekly_leaves WHERE department_id = ?",
-                (department.id,),
-            )
-            connection.execute(
                 """
                 INSERT OR REPLACE INTO department_weekly_leaves (department_id, weekday)
                 VALUES (?, ?)
@@ -442,6 +441,10 @@ class Database:
             params = (department.id, int(weekday))
         with self.connect() as connection:
             cursor = connection.execute(query, params)
+            connection.execute(
+                "DELETE FROM department_weekly_leave_cancellations WHERE department_id = ?",
+                (department.id,),
+            )
         return cursor.rowcount > 0
 
     def list_department_weekly_leaves(self, department_id: int) -> list[sqlite3.Row]:
@@ -697,9 +700,15 @@ class Database:
             INSERT OR IGNORE INTO department_weekly_leaves (department_id, weekday)
             SELECT department_id, weekday
             FROM weekly_leaves
+            WHERE personnel_name = ?
             """
+            ,
+            (LEGACY_DEPARTMENT_WEEKLY_LEAVE_NAME,),
         )
-        connection.execute("DELETE FROM weekly_leaves")
+        connection.execute(
+            "DELETE FROM weekly_leaves WHERE personnel_name = ?",
+            (LEGACY_DEPARTMENT_WEEKLY_LEAVE_NAME,),
+        )
 
 
 def _parse_optional_time(value: str | None):
