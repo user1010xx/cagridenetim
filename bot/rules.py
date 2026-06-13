@@ -146,14 +146,14 @@ def has_violations(evaluations: list[PersonnelEvaluation]) -> bool:
 
 def _group_calls(calls: list[CallRecord], personnel: list[Personnel]) -> dict[str, list[CallRecord]]:
     extension_to_name = {
-        person.extension.strip(): person.name
+        _normalize_extension(person.extension): person.name
         for person in personnel
-        if person.extension and person.extension.strip()
+        if _normalize_extension(person.extension)
     }
     known_names = {person.name.casefold(): person.name for person in personnel}
     grouped: dict[str, list[CallRecord]] = {}
     for call in calls:
-        name = extension_to_name.get(call.extension or "")
+        name = extension_to_name.get(_normalize_extension(call.extension))
         if name is None:
             name = known_names.get(call.extension_name.casefold(), call.extension_name)
         grouped.setdefault(name, []).append(call)
@@ -164,8 +164,9 @@ def _calls_for_person(person: Personnel, grouped: dict[str, list[CallRecord]]) -
     if person.name in grouped:
         return grouped[person.name]
     if person.extension:
+        person_extension = _normalize_extension(person.extension)
         for records in grouped.values():
-            if records and records[0].extension == person.extension:
+            if records and _normalize_extension(records[0].extension) == person_extension:
                 return records
     return []
 
@@ -612,6 +613,20 @@ def _clean_optional_text(value: object | None) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _normalize_extension(value: object | None) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    normalized = text.replace(",", ".")
+    try:
+        number = float(normalized)
+    except ValueError:
+        return "".join(normalized.split())
+    if number.is_integer():
+        return str(int(number))
+    return "".join(normalized.split())
 
 
 def _normalize_key(value: object) -> str:

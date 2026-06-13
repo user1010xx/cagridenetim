@@ -449,6 +449,20 @@ class RulesTest(unittest.TestCase):
 
         self.assertEqual([evaluation.name for evaluation in result], ["Ali"])
 
+    def test_evaluate_department_matches_numeric_extension_formats(self) -> None:
+        result = evaluate_department(
+            [call("Bilinmeyen", "11:30", extension="310.0")],
+            [Personnel(id=1, department_id=1, name="Alaz", extension="310", is_active=True)],
+            self.rules,
+            self.report_date,
+            dt("11:40"),
+            TZ,
+        )
+
+        self.assertEqual(result[0].name, "Alaz")
+        self.assertEqual(len(result[0].calls), 1)
+        self.assertEqual(result[0].total_call_count, 1)
+
     def test_evaluate_department_can_still_use_api_people_when_no_personnel_list_exists(self) -> None:
         result = evaluate_department(
             [
