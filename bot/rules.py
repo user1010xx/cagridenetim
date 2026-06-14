@@ -74,6 +74,7 @@ class PersonnelEvaluation:
     violations: list[str] = field(default_factory=list)
     leave_periods: list[tuple[datetime, datetime | None]] = field(default_factory=list)
     total_call_count: int | None = None
+    total_call_duration_seconds: int | None = None
     is_on_leave: bool = False
 
 
@@ -147,6 +148,7 @@ def evaluate_department(
     for person in expected_people:
         person_calls = _calls_for_person(person, grouped)
         total_call_count = len(person_calls)
+        total_call_duration_seconds = sum(max(0, call.duration_seconds) for call in person_calls)
         person_leave_periods = _leave_periods_for_person(person, leave_periods or {})
         if person.name.casefold() in weekly_leave_names or person_leave_periods:
             evaluations.append(
@@ -155,6 +157,7 @@ def evaluate_department(
                     extension=person.extension,
                     leave_periods=person_leave_periods,
                     total_call_count=total_call_count,
+                    total_call_duration_seconds=total_call_duration_seconds,
                     is_on_leave=True,
                 )
             )
@@ -166,6 +169,7 @@ def evaluate_department(
             calls=person_calls,
             leave_periods=person_leave_periods,
             total_call_count=total_call_count,
+            total_call_duration_seconds=total_call_duration_seconds,
             is_on_leave=bool(person_leave_periods),
         )
         _check_work_start(evaluation, rules, report_date, now, timezone)

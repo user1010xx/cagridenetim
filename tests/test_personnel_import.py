@@ -178,8 +178,8 @@ class PersonnelImportTest(unittest.TestCase):
         self.assertIn("Ayşe", text)
         self.assertNotIn("Uygun Personeller", text)
         self.assertIn("Personel Çağrı Adetleri", text)
-        self.assertIn("Ayşe (1001) - 1 çağrı", text)
-        self.assertIn("Mehmet (1002) - 2 çağrı", text)
+        self.assertIn("Ayşe (1001) - 1 çağrı - 00:01:00", text)
+        self.assertIn("Mehmet (1002) - 2 çağrı - 00:02:00", text)
 
     def test_report_new_violations_only_shows_ok_people_when_no_new_violations(self) -> None:
         from datetime import date, datetime, time
@@ -206,7 +206,7 @@ class PersonnelImportTest(unittest.TestCase):
         self.assertNotIn("Yeni İhlali Olmayan Personeller", text)
         self.assertIn("Ayşe", text)
 
-    def test_report_personnel_call_counts_use_total_call_count_when_available(self) -> None:
+    def test_report_personnel_call_counts_use_totals_when_available(self) -> None:
         from datetime import date, datetime, time
         from zoneinfo import ZoneInfo
 
@@ -216,7 +216,16 @@ class PersonnelImportTest(unittest.TestCase):
         text = build_department_report(
             department=Department(1, "Destek", "COMPANY", "CHAT", True),
             rules=DepartmentRules(1, time(11, 10), None, None, None, None, None, 15),
-            evaluations=[PersonnelEvaluation(name="Asu", extension="605", calls=[], violations=[], total_call_count=12)],
+            evaluations=[
+                PersonnelEvaluation(
+                    name="Asu",
+                    extension="605",
+                    calls=[],
+                    violations=[],
+                    total_call_count=12,
+                    total_call_duration_seconds=155,
+                )
+            ],
             report_date=date(2026, 6, 10),
             now=datetime(2026, 6, 10, 12, 0, tzinfo=ZoneInfo("Europe/Istanbul")),
             raw_call_count=12,
@@ -224,7 +233,7 @@ class PersonnelImportTest(unittest.TestCase):
             personnel=[],
         )
 
-        self.assertIn("Asu (605) - 12 çağrı", text)
+        self.assertIn("Asu (605) - 12 çağrı - 00:02:35", text)
 
     def test_report_shows_leave_people_instead_of_ok_people(self) -> None:
         from datetime import date, datetime, time
