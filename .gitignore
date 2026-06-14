@@ -7,3 +7,5 @@ __pycache__/
 venv/
 data/
 *.sqlite3
+apidocs/extracted/
+apidocs/*.docx

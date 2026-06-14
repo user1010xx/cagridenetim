@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
-from datetime import date, datetime
 from copy import copy
+from dataclasses import replace
+from datetime import date, datetime
 
 from bot.database import Database
 from bot.invekto_client import InvektoClient
@@ -11,6 +13,9 @@ from bot.reporting import build_department_report
 from bot.rules import PersonnelEvaluation
 from bot.rules import evaluate_department, normalize_calls
 from bot.rules import _duration_to_seconds, _normalize_extension, _normalize_key
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -61,8 +66,7 @@ async def generate_department_report_payload(
         now.tzinfo,
         leave_periods=leave_periods,
     )
-    performance_rows = await client.fetch_performance_report(department.company_code, report_date)
-    _apply_performance_totals(evaluations, performance_rows, personnel)
+    evaluations = await _with_performance_totals(client, department.company_code, report_date, evaluations, personnel)
     notified_violations = database.list_notified_violations(department.id, report_date.isoformat()) if suppress_notified else set()
     report_evaluations = _filter_notified_violations(evaluations, notified_violations)
     notification_violations = tuple(_violation_keys(report_evaluations)) if suppress_notified else ()
@@ -124,23 +128,46 @@ def _raw_call_sample_keys(raw_calls: list[dict[str, object]]) -> list[str]:
     return [str(key) for key in raw_calls[0].keys()]
 
 
+async def _with_performance_totals(
+    client: InvektoClient,
+    company_code: str,
+    report_date: date,
+    evaluations: list[PersonnelEvaluation],
+    personnel: list[Personnel],
+) -> list[PersonnelEvaluation]:
+    try:
+        performance_rows = await client.fetch_performance_report(company_code, report_date)
+    except Exception as exc:
+        logger.warning("Performans raporu alınamadı, detay çağrı toplamları kullanılacak: %s", exc)
+        return evaluations
+    return _apply_performance_totals(evaluations, performance_rows, personnel)
+
+
 def _apply_performance_totals(
     evaluations: list[PersonnelEvaluation],
     performance_rows: list[dict[str, object]],
     personnel: list[Personnel],
-) -> None:
+) -> list[PersonnelEvaluation]:
     if not performance_rows:
-        return
+        return evaluations
     totals = _performance_totals_by_person(performance_rows, personnel)
     if not totals:
-        return
+        return evaluations
+    updated_evaluations: list[PersonnelEvaluation] = []
     for evaluation in evaluations:
         key = evaluation.name.casefold()
         if key not in totals:
+            updated_evaluations.append(evaluation)
             continue
         total_call_count, total_duration_seconds = totals[key]
-        evaluation.total_call_count = total_call_count
-        evaluation.total_call_duration_seconds = total_duration_seconds
+        updated_evaluations.append(
+            replace(
+                evaluation,
+                total_call_count=total_call_count,
+                total_call_duration_seconds=total_duration_seconds,
+            )
+        )
+    return updated_evaluations
 
 
 def _performance_totals_by_person(
