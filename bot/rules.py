@@ -64,6 +64,34 @@ TALK_DURATION_FIELDS = (
     "GÖRÜŞME SÜRESİ",
     "GORUSME SURESI",
 )
+CALL_DURATION_FIELDS = (
+    "CallTimeSecond",
+    "CALLTIMESECOND",
+    "CallTime",
+    "DurationSecond",
+    "DurationSeconds",
+    "Duration",
+)
+RING_DURATION_FIELDS = (
+    "RingTimeSecond",
+    "RINGTIMESECOND",
+    "RingDurationSecond",
+    "RingDurationSeconds",
+    "RingDuration",
+    "RingTime",
+    "ÇALDIRMA SÜRESİ",
+    "CALDIRMA SURESI",
+)
+WAIT_DURATION_FIELDS = (
+    "WaitTimeSecond",
+    "WAITTIMESECOND",
+    "WaitDurationSecond",
+    "WaitDurationSeconds",
+    "WaitDuration",
+    "WaitTime",
+    "BEKLEME SÜRESİ",
+    "BEKLEME SURESI",
+)
 
 
 @dataclass(frozen=True)
@@ -535,31 +563,9 @@ def _first_value(item: dict[str, object], *keys: str, fuzzy: bool = True) -> obj
 
 
 def _call_duration_seconds(item: dict[str, object]) -> int:
-    conversation_seconds = _duration_to_seconds(
-        _first_value(
-            item,
-            "CallTimeSecond",
-            "CALLTIMESECOND",
-            "CallTime",
-            "DurationSecond",
-            "DurationSeconds",
-            "Duration",
-        )
-    )
+    conversation_seconds = _duration_field_seconds(item, CALL_DURATION_FIELDS)[1]
     talk_seconds = _call_talk_duration_seconds(item)
-    ring_seconds = _duration_to_seconds(
-        _first_value(
-            item,
-            "RingTimeSecond",
-            "RINGTIMESECOND",
-            "RingDurationSecond",
-            "RingDurationSeconds",
-            "RingDuration",
-            "RingTime",
-            "ÇALDIRMA SÜRESİ",
-            "CALDIRMA SURESI",
-        )
-    )
+    ring_seconds = _duration_field_seconds(item, RING_DURATION_FIELDS)[1]
     if conversation_seconds > 0:
         return conversation_seconds
     if talk_seconds is not None and talk_seconds > 0:
@@ -568,10 +574,22 @@ def _call_duration_seconds(item: dict[str, object]) -> int:
 
 
 def _call_talk_duration_seconds(item: dict[str, object]) -> int | None:
-    value = _first_value(item, *TALK_DURATION_FIELDS, fuzzy=False)
+    has_talk_value, talk_seconds = _duration_field_seconds(item, TALK_DURATION_FIELDS)
+    if has_talk_value:
+        return talk_seconds
+    has_total_value, total_seconds = _duration_field_seconds(item, CALL_DURATION_FIELDS)
+    has_ring_value, ring_seconds = _duration_field_seconds(item, RING_DURATION_FIELDS)
+    has_wait_value, wait_seconds = _duration_field_seconds(item, WAIT_DURATION_FIELDS)
+    if has_total_value and (has_ring_value or has_wait_value):
+        return max(0, total_seconds - ring_seconds - wait_seconds)
+    return None
+
+
+def _duration_field_seconds(item: dict[str, object], fields: tuple[str, ...]) -> tuple[bool, int]:
+    value = _first_value(item, *fields, fuzzy=False)
     if value is None:
-        return None
-    return _duration_to_seconds(value)
+        return False, 0
+    return True, _duration_to_seconds(value)
 
 
 def _call_started_at(item: dict[str, object], timezone: ZoneInfo) -> datetime | None:

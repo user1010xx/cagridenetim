@@ -6,9 +6,11 @@ from copy import copy
 
 from bot.database import Database
 from bot.invekto_client import InvektoClient
+from bot.models import Personnel
 from bot.reporting import build_department_report
 from bot.rules import PersonnelEvaluation
 from bot.rules import evaluate_department, normalize_calls
+from bot.rules import _duration_to_seconds, _normalize_extension, _normalize_key
 
 
 @dataclass(frozen=True)
@@ -59,6 +61,8 @@ async def generate_department_report_payload(
         now.tzinfo,
         leave_periods=leave_periods,
     )
+    performance_rows = await client.fetch_performance_report(department.company_code, report_date)
+    _apply_performance_totals(evaluations, performance_rows, personnel)
     notified_violations = database.list_notified_violations(department.id, report_date.isoformat()) if suppress_notified else set()
     report_evaluations = _filter_notified_violations(evaluations, notified_violations)
     notification_violations = tuple(_violation_keys(report_evaluations)) if suppress_notified else ()
@@ -118,6 +122,105 @@ def _raw_call_sample_keys(raw_calls: list[dict[str, object]]) -> list[str]:
     if not raw_calls or not isinstance(raw_calls[0], dict):
         return []
     return [str(key) for key in raw_calls[0].keys()]
+
+
+def _apply_performance_totals(
+    evaluations: list[PersonnelEvaluation],
+    performance_rows: list[dict[str, object]],
+    personnel: list[Personnel],
+) -> None:
+    if not performance_rows:
+        return
+    totals = _performance_totals_by_person(performance_rows, personnel)
+    if not totals:
+        return
+    for evaluation in evaluations:
+        key = evaluation.name.casefold()
+        if key not in totals:
+            continue
+        total_call_count, total_duration_seconds = totals[key]
+        evaluation.total_call_count = total_call_count
+        evaluation.total_call_duration_seconds = total_duration_seconds
+
+
+def _performance_totals_by_person(
+    performance_rows: list[dict[str, object]],
+    personnel: list[Personnel],
+) -> dict[str, tuple[int, int]]:
+    extension_to_name = {
+        _normalize_extension(person.extension): person.name
+        for person in personnel
+        if _normalize_extension(person.extension)
+    }
+    known_names = {_normalize_key(person.name): person.name for person in personnel}
+    totals: dict[str, tuple[int, int]] = {}
+    for row in performance_rows:
+        if not isinstance(row, dict):
+            continue
+        name = _performance_person_name(row, extension_to_name, known_names)
+        if not name:
+            continue
+        call_count = _performance_total_call_count(row)
+        duration_seconds = _performance_total_duration_seconds(row)
+        totals[name.casefold()] = (call_count, duration_seconds)
+    return totals
+
+
+def _performance_person_name(
+    row: dict[str, object],
+    extension_to_name: dict[str, str],
+    known_names: dict[str, str],
+) -> str | None:
+    extension = _normalize_extension(_first_performance_value(row, "ExtensionNumber", "Extension", "Ext", "Dahili", "DAHİLİ"))
+    if extension and extension in extension_to_name:
+        return extension_to_name[extension]
+    raw_name = _first_performance_value(row, "ExtensionName", "Extension Name", "Dahili Adı", "DAHİLİ ADI")
+    if raw_name is None:
+        return None
+    name = " ".join(str(raw_name).strip().split())
+    if not name:
+        return None
+    return known_names.get(_normalize_key(name), name)
+
+
+def _performance_total_call_count(row: dict[str, object]) -> int:
+    return _to_int(_first_performance_value(row, "TotalCall", "TOTALCALL", "TotalCallCount", "TOTALCALLCOUNT"))
+
+
+def _performance_total_duration_seconds(row: dict[str, object]) -> int:
+    return _duration_to_seconds(
+        _first_performance_value(
+            row,
+            "TotalDuration",
+            "TOTALDURATION",
+            "TotalCallDuration",
+            "TotalCallTime",
+            "TOTALCALLTIME",
+            "TOPLAM GÖRÜŞME SÜRESİ",
+            "TOPLAM GORUSME SURESI",
+        )
+    )
+
+
+def _first_performance_value(row: dict[str, object], *keys: str) -> object | None:
+    casefolded = {str(key).strip().casefold(): value for key, value in row.items()}
+    normalized = {_normalize_key(key): value for key, value in row.items()}
+    for key in keys:
+        value = row.get(key)
+        if value is None:
+            value = casefolded.get(key.casefold())
+        if value is None:
+            value = normalized.get(_normalize_key(key))
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _to_int(value: object | None) -> int:
+    try:
+        return int(float(str(value or "0").replace(",", ".")))
+    except ValueError:
+        return 0
 
 
 def _load_leave_periods(database: Database, department_id: int, report_date: date, timezone) -> dict[str, list[tuple[datetime, datetime | None]]]:

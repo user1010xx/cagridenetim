@@ -450,6 +450,25 @@ class RulesTest(unittest.TestCase):
         self.assertEqual(records[0].started_at.hour, 11)
         self.assertEqual(records[0].started_at.minute, 45)
 
+    def test_normalize_calls_derives_talk_duration_from_total_minus_ring_and_wait(self) -> None:
+        records = normalize_calls(
+            [
+                {
+                    "Direct": "1001",
+                    "CreateDate": "2026-06-09",
+                    "CreateTime": "11:45:40",
+                    "RingTime": "00:00:08",
+                    "WaitTime": "00:00:02",
+                    "CallTime": "00:00:19",
+                    "CompletedExtensionName": "Ali",
+                }
+            ],
+            TZ,
+        )
+
+        self.assertEqual(records[0].duration_seconds, 19)
+        self.assertEqual(records[0].talk_duration_seconds, 9)
+
     def test_normalize_calls_does_not_drop_unknown_event_type(self) -> None:
         records = normalize_calls(
             [

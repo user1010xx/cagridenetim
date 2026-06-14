@@ -36,6 +36,15 @@ class InvektoClientTest(unittest.TestCase):
         self.assertEqual(result, [])
         self.assertEqual(fetch.call_count, 3)
 
+    def test_fetch_performance_report_uses_performance_report_type(self) -> None:
+        client = InvektoClient("https://example.invalid")
+
+        with patch.object(client, "_read_response", return_value='{"Status": true, "Data": []}') as read_response:
+            client._fetch_performance_report_for_date("COMPANY", "2026-06-10")
+
+        request_body = read_response.call_args.args[0].data.decode("utf-8")
+        self.assertIn('"reportType": 1', request_body)
+
     def test_read_response_retries_timeout(self) -> None:
         client = InvektoClient("https://example.invalid", timeout_seconds=60, max_attempts=2)
         response = Mock()

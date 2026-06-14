@@ -26,6 +26,9 @@ class InvektoClient:
     async def fetch_call_report(self, company_code: str, report_date: date) -> list[dict[str, Any]]:
         return await asyncio.to_thread(self._fetch_call_report_sync, company_code, report_date)
 
+    async def fetch_performance_report(self, company_code: str, report_date: date) -> list[dict[str, Any]]:
+        return await asyncio.to_thread(self._fetch_performance_report_sync, company_code, report_date)
+
     def _fetch_call_report_sync(self, company_code: str, report_date: date) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
         for date_text in _date_texts(report_date):
@@ -34,14 +37,28 @@ class InvektoClient:
                 return results
         return results
 
+    def _fetch_performance_report_sync(self, company_code: str, report_date: date) -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
+        for date_text in _date_texts(report_date):
+            results = self._fetch_performance_report_for_date(company_code, date_text)
+            if results:
+                return results
+        return results
+
     def _fetch_call_report_for_date(self, company_code: str, date_text: str) -> list[dict[str, Any]]:
+        return self._fetch_report_for_date(company_code, date_text, 5)
+
+    def _fetch_performance_report_for_date(self, company_code: str, date_text: str) -> list[dict[str, Any]]:
+        return self._fetch_report_for_date(company_code, date_text, 1)
+
+    def _fetch_report_for_date(self, company_code: str, date_text: str, report_type: int) -> list[dict[str, Any]]:
         payload = {
             "filterType": 0,
             "callID": "",
             "companyCode": company_code,
             "startDate": date_text,
             "endDate": date_text,
-            "reportType": 5,
+            "reportType": report_type,
         }
         body = json.dumps(payload).encode("utf-8")
         api_request = request.Request(
