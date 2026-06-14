@@ -103,7 +103,7 @@ def _append_personnel_call_counts(lines: list[str], evaluations: list[PersonnelE
         call_count = evaluation.total_call_count if evaluation.total_call_count is not None else len(evaluation.calls)
         duration_seconds = evaluation.total_call_duration_seconds
         if duration_seconds is None:
-            duration_seconds = sum(max(0, call.duration_seconds) for call in evaluation.calls)
+            duration_seconds = sum(_report_duration_seconds(call) for call in evaluation.calls)
         lines.append(f"   • {evaluation.name}{extension_text} - {call_count} çağrı - {_format_duration(duration_seconds)}")
 
 
@@ -143,6 +143,13 @@ def _format_duration(total_seconds: int) -> str:
     hours, remainder = divmod(max(0, total_seconds), 3600)
     minutes, seconds = divmod(remainder, 60)
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
+def _report_duration_seconds(call) -> int:
+    talk_duration_seconds = getattr(call, "talk_duration_seconds", None)
+    if talk_duration_seconds is not None:
+        return max(0, talk_duration_seconds)
+    return max(0, call.duration_seconds)
 
 
 def _call_count_text(raw_call_count: int, processed_call_count: int | None) -> str:

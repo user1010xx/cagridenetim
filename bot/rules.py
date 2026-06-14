@@ -50,6 +50,20 @@ EXTENSION_NUMBER_FIELDS = (
     "DAHİLİ",
     "DAHILI",
 )
+TALK_DURATION_FIELDS = (
+    "TalkTimeSecond",
+    "TalkDurationSecond",
+    "TalkDurationSeconds",
+    "ConversationDurationSecond",
+    "ConversationDurationSeconds",
+    "TalkTime",
+    "TalkDuration",
+    "ConversationDuration",
+    "KONUŞMA SÜRESİ",
+    "KONUSMA SURESI",
+    "GÖRÜŞME SÜRESİ",
+    "GORUSME SURESI",
+)
 
 
 @dataclass(frozen=True)
@@ -60,6 +74,7 @@ class CallRecord:
     duration_seconds: int
     event_type: str
     call_id: str | None = None
+    talk_duration_seconds: int | None = None
 
     @property
     def ended_at(self) -> datetime:
@@ -85,6 +100,7 @@ def normalize_calls(raw_calls: list[dict[str, object]], timezone: ZoneInfo) -> l
         duration = _call_duration_seconds(item)
         if duration <= 0:
             continue
+        talk_duration = _call_talk_duration_seconds(item)
         started_at = _call_started_at(item, timezone)
         if started_at is None:
             continue
@@ -114,6 +130,7 @@ def normalize_calls(raw_calls: list[dict[str, object]], timezone: ZoneInfo) -> l
                 duration_seconds=duration,
                 event_type=event_type or "1",
                 call_id=_clean_optional_text(_first_value(item, "CallID", "CALLID")),
+                talk_duration_seconds=talk_duration,
             )
         )
     return sorted(records, key=lambda record: record.started_at)
@@ -148,7 +165,7 @@ def evaluate_department(
     for person in expected_people:
         person_calls = _calls_for_person(person, grouped)
         total_call_count = len(person_calls)
-        total_call_duration_seconds = sum(max(0, call.duration_seconds) for call in person_calls)
+        total_call_duration_seconds = sum(_report_duration_seconds(call) for call in person_calls)
         person_leave_periods = _leave_periods_for_person(person, leave_periods or {})
         if person.name.casefold() in weekly_leave_names or person_leave_periods:
             evaluations.append(
@@ -185,6 +202,12 @@ def evaluate_department(
 
 def has_violations(evaluations: list[PersonnelEvaluation]) -> bool:
     return any(evaluation.violations for evaluation in evaluations)
+
+
+def _report_duration_seconds(call: CallRecord) -> int:
+    if call.talk_duration_seconds is not None:
+        return max(0, call.talk_duration_seconds)
+    return max(0, call.duration_seconds)
 
 
 def _group_calls(calls: list[CallRecord], personnel: list[Personnel]) -> dict[str, list[CallRecord]]:
@@ -517,21 +540,13 @@ def _call_duration_seconds(item: dict[str, object]) -> int:
             item,
             "CallTimeSecond",
             "CALLTIMESECOND",
-            "TalkTimeSecond",
-            "TalkDurationSecond",
-            "TalkDurationSeconds",
-            "ConversationDurationSecond",
-            "ConversationDurationSeconds",
             "CallTime",
             "DurationSecond",
             "DurationSeconds",
             "Duration",
-            "KONUŞMA SÜRESİ",
-            "KONUSMA SURESI",
-            "GÖRÜŞME SÜRESİ",
-            "GORUSME SURESI",
         )
     )
+    talk_seconds = _call_talk_duration_seconds(item)
     ring_seconds = _duration_to_seconds(
         _first_value(
             item,
@@ -545,7 +560,18 @@ def _call_duration_seconds(item: dict[str, object]) -> int:
             "CALDIRMA SURESI",
         )
     )
+    if conversation_seconds > 0:
+        return conversation_seconds
+    if talk_seconds is not None and talk_seconds > 0:
+        return talk_seconds
     return conversation_seconds if conversation_seconds > 0 else ring_seconds
+
+
+def _call_talk_duration_seconds(item: dict[str, object]) -> int | None:
+    value = _first_value(item, *TALK_DURATION_FIELDS, fuzzy=False)
+    if value is None:
+        return None
+    return _duration_to_seconds(value)
 
 
 def _call_started_at(item: dict[str, object], timezone: ZoneInfo) -> datetime | None:

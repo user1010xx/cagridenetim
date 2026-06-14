@@ -291,6 +291,22 @@ class RulesTest(unittest.TestCase):
         self.assertEqual(result.total_call_count, 2)
         self.assertTrue(result.is_on_leave)
 
+    def test_total_call_duration_uses_talk_duration_when_available(self) -> None:
+        result = evaluate_department(
+            [
+                CallRecord("Ali", "1001", dt("11:20"), 25, "1", talk_duration_seconds=5),
+                CallRecord("Ali", "1001", dt("11:30"), 30, "1", talk_duration_seconds=7),
+            ],
+            self.personnel,
+            self.rules,
+            self.report_date,
+            dt("11:40"),
+            TZ,
+        )[0]
+
+        self.assertEqual(result.total_call_count, 2)
+        self.assertEqual(result.total_call_duration_seconds, 12)
+
     def test_normalize_calls_accepts_invekto_grid_fields(self) -> None:
         records = normalize_calls(
             [
@@ -324,6 +340,39 @@ class RulesTest(unittest.TestCase):
         )
 
         self.assertEqual(records[0].duration_seconds, 5)
+
+    def test_normalize_calls_keeps_talk_duration_separate_from_total_call_time(self) -> None:
+        records = normalize_calls(
+            [
+                {
+                    "Date": "2026-06-09",
+                    "Time": "11:45:40",
+                    "CallTimeSecond": "25",
+                    "KONUŞMA SÜRESİ": "00:00:05",
+                    "ExtensionName": "Ali",
+                }
+            ],
+            TZ,
+        )
+
+        self.assertEqual(records[0].duration_seconds, 25)
+        self.assertEqual(records[0].talk_duration_seconds, 5)
+
+    def test_normalize_calls_keeps_call_when_only_talk_duration_exists(self) -> None:
+        records = normalize_calls(
+            [
+                {
+                    "Date": "2026-06-09",
+                    "Time": "11:45:40",
+                    "KONUŞMA SÜRESİ": "00:00:05",
+                    "ExtensionName": "Ali",
+                }
+            ],
+            TZ,
+        )
+
+        self.assertEqual(records[0].duration_seconds, 5)
+        self.assertEqual(records[0].talk_duration_seconds, 5)
 
     def test_normalize_calls_accepts_minute_second_duration(self) -> None:
         records = normalize_calls(
