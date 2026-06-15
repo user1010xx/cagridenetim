@@ -195,7 +195,8 @@ def evaluate_department(
         total_call_count = len(person_calls)
         total_call_duration_seconds = sum(_report_duration_seconds(call) for call in person_calls)
         person_leave_periods = _leave_periods_for_person(person, leave_periods or {})
-        if person.name.casefold() in weekly_leave_names or person_leave_periods:
+        is_on_leave = person.name.casefold() in weekly_leave_names or _is_on_leave_at(now, person_leave_periods)
+        if is_on_leave:
             evaluations.append(
                 PersonnelEvaluation(
                     name=person.name,
@@ -215,7 +216,7 @@ def evaluate_department(
             leave_periods=person_leave_periods,
             total_call_count=total_call_count,
             total_call_duration_seconds=total_call_duration_seconds,
-            is_on_leave=bool(person_leave_periods),
+            is_on_leave=False,
         )
         _check_work_start(evaluation, rules, report_date, now, timezone)
         _check_call_gaps(evaluation, rules, report_date, timezone)
@@ -291,6 +292,10 @@ def _filter_calls_by_leave(
 def _call_overlaps_leave(call: CallRecord, leave_start: datetime, leave_end: datetime | None) -> bool:
     effective_leave_end = leave_end or datetime.max.replace(tzinfo=call.started_at.tzinfo)
     return call.started_at < effective_leave_end and call.ended_at > leave_start
+
+
+def _is_on_leave_at(value: datetime, leave_periods: list[tuple[datetime, datetime | None]]) -> bool:
+    return _datetime_in_leave(value, leave_periods)
 
 
 def _check_work_start(

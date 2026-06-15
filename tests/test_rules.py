@@ -291,6 +291,21 @@ class RulesTest(unittest.TestCase):
         self.assertEqual(result.total_call_count, 2)
         self.assertTrue(result.is_on_leave)
 
+    def test_ended_leave_period_is_not_reported_as_active_leave(self) -> None:
+        result = evaluate_department(
+            [call("Ali", "11:20", extension="1001"), call("Ali", "18:55", extension="1001")],
+            self.personnel,
+            self.rules,
+            self.report_date,
+            dt("19:00"),
+            TZ,
+            leave_periods={"ali": [(dt("11:00"), dt("12:00"))]},
+        )[0]
+
+        self.assertFalse(result.is_on_leave)
+        self.assertEqual(len(result.calls), 1)
+        self.assertEqual(result.total_call_count, 2)
+
     def test_total_call_duration_uses_talk_duration_when_available(self) -> None:
         result = evaluate_department(
             [
