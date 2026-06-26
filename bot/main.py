@@ -218,7 +218,7 @@ def build_application() -> Application:
     )
     application.add_handler(
         ConversationHandler(
-            entry_points=[CommandHandler(["izin", "ızin"], izin_start)],
+            entry_points=[CommandHandler("izin", izin_start)],
             states={
                 LEAVE_DEPARTMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, izin_department)],
                 LEAVE_PERSONNEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, izin_personnel)],
@@ -228,7 +228,7 @@ def build_application() -> Application:
     )
     application.add_handler(
         ConversationHandler(
-            entry_points=[CommandHandler(["iziniptal", "izıniptal", "izinıptal", "ızıniptal"], iziniptal_start)],
+            entry_points=[CommandHandler("iziniptal", iziniptal_start)],
             states={
                 LEAVE_CANCEL_DEPARTMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, iziniptal_department)],
                 LEAVE_CANCEL_PERSONNEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, iziniptal_personnel)],
@@ -296,7 +296,7 @@ def build_application() -> Application:
             fallbacks=[CommandHandler("iptal", kuralayarla_cancel)],
         )
     )
-    application.add_handler(CommandHandler(["izinlistele", "ızinlistele"], izinlistele))
+    application.add_handler(CommandHandler("izinlistele", izinlistele))
     application.add_handler(CommandHandler("kurallistele", kurallistele))
     application.add_handler(CommandHandler("rapor", rapor))
     application.add_handler(CommandHandler("kontrolinvekto", kontrolinvekto))
@@ -315,3 +315,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
