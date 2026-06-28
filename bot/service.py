@@ -11,7 +11,7 @@ from bot.invekto_client import InvektoClient
 from bot.models import Personnel
 from bot.reporting import build_department_report
 from bot.rules import PersonnelEvaluation
-from bot.rules import evaluate_department, find_unmatched_call_names, normalize_calls
+from bot.rules import evaluate_department, normalize_calls
 from bot.rules import _duration_to_seconds, _normalize_extension, _normalize_key
 from bot.violation_keys import violation_key
 
@@ -64,7 +64,6 @@ async def generate_department_report_payload(
     calls = normalize_calls(raw_calls, now.tzinfo)
     leave_periods = _load_leave_periods(database, department.id, report_date, now.tzinfo)
     responsibles = database.list_responsibles(department.id)
-    unmatched_call_names = find_unmatched_call_names(calls, personnel)
     if len(raw_calls) == 0:
         evaluations: list[PersonnelEvaluation] = []
     else:
@@ -93,7 +92,6 @@ async def generate_department_report_payload(
         personnel=personnel,
         responsibles=responsibles,
         new_violations_only=suppress_notified,
-        unmatched_call_names=unmatched_call_names,
     )
     should_send = _should_send_report(
         suppress_notified=suppress_notified,
