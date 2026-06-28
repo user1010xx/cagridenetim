@@ -24,11 +24,12 @@ class HandlerTest(unittest.TestCase):
 
         self.assertTrue(_can_report_department_in_chat(update, department))
 
-    def test_cannot_report_department_in_other_group(self) -> None:
+    def test_can_report_department_in_any_group(self) -> None:
+        # Bot hangi grupta ise, o gruptaki herkes rapor çekebilir
         update = SimpleNamespace(effective_chat=SimpleNamespace(id=-1002, type="group"))
         department = Department(1, "Satış1", "COMPANY", "-1001", True)
 
-        self.assertFalse(_can_report_department_in_chat(update, department))
+        self.assertTrue(_can_report_department_in_chat(update, department))
 
     def test_admin_private_chat_can_report_department(self) -> None:
         update = SimpleNamespace(effective_chat=SimpleNamespace(id=123, type="private"))
@@ -71,7 +72,8 @@ class HandlerTest(unittest.TestCase):
 
         self.assertTrue(_is_allowed(update, context))
 
-    def test_non_admin_cannot_use_commands_in_unregistered_group(self) -> None:
+    def test_non_admin_can_use_commands_in_any_group(self) -> None:
+        # Bot hangi grupta ise, o gruptaki herkes (admin olmasa da) tüm komutları kullanabilir
         update = SimpleNamespace(
             effective_chat=SimpleNamespace(id=-1003, type="group", title="Yeni Grup"),
             effective_user=SimpleNamespace(id=7),
@@ -85,9 +87,10 @@ class HandlerTest(unittest.TestCase):
             )
         )
 
-        self.assertFalse(_is_allowed(update, context))
+        self.assertTrue(_is_allowed(update, context))
 
-    def test_group_member_cannot_use_admin_commands_without_admin_id(self) -> None:
+    def test_group_member_can_use_admin_commands_in_group(self) -> None:
+        # Grup üyeleri admin komutlarını da kullanabilir
         update = SimpleNamespace(
             effective_chat=SimpleNamespace(id=-1001, type="group", title="Satış1"),
             effective_user=SimpleNamespace(id=7),
@@ -103,7 +106,7 @@ class HandlerTest(unittest.TestCase):
             )
         )
 
-        self.assertFalse(_can_use_admin_command(update, context))
+        self.assertTrue(_can_use_admin_command(update, context))
 
     def test_admin_can_use_admin_commands_in_registered_department_group(self) -> None:
         update = SimpleNamespace(

@@ -20,10 +20,10 @@ def is_allowed(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
         return True
     if chat.type == "private":
         return False
-    title = (chat.title or "").strip().casefold()
-    if title in config.allowed_group_names:
+    # Bot hangi grupta ise, o gruptaki herkes tüm komutları kullanabilir (herkes admin gibi)
+    if chat.type in ("group", "supergroup"):
         return True
-    return is_registered_department_chat(context.application.bot_data.get("database"), chat.id)
+    return False
 
 
 def can_use_admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -31,7 +31,13 @@ def can_use_admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if user is None:
         return False
     config: Config = context.application.bot_data["config"]
-    return user.id in config.admin_user_ids
+    if user.id in config.admin_user_ids:
+        return True
+    chat = update.effective_chat
+    # Grup içinde herkes admin komutlarını kullanabilir
+    if chat is not None and chat.type in ("group", "supergroup"):
+        return True
+    return False
 
 
 def is_registered_department_chat(database: Database | None, chat_id: int) -> bool:
@@ -46,13 +52,9 @@ def can_report_department_in_chat(update: Update, department: Department, config
         return False
     if chat.type == "private":
         return True
-    # If this group has any department registered, allow full access for members
-    if database is not None and is_registered_department_chat(database, chat.id):
+    # Grup içinde herkes herhangi bir departman için rapor çekebilir
+    if chat.type in ("group", "supergroup"):
         return True
-    if config is not None:
-        title = (chat.title or "").strip().casefold()
-        if title in config.allowed_group_names:
-            return True
     return str(chat.id) == department.telegram_chat_id
 
 
@@ -70,14 +72,10 @@ def departments_visible_in_chat(
             if user is None or user.id not in config.admin_user_ids:
                 return []
         return departments
-    current_chat_str = str(chat.id)
-    # If this chat has any registered department, it's a managed group → show all departments
-    if any(d.telegram_chat_id == current_chat_str for d in departments):
+    # Grup içinde herkes tüm departmanları görebilir
+    if chat.type in ("group", "supergroup"):
         return departments
-    if config is not None:
-        title = (chat.title or "").strip().casefold()
-        if title in config.allowed_group_names:
-            return departments
+    current_chat_str = str(chat.id)
     return [department for department in departments if department.telegram_chat_id == current_chat_str]
 
 
