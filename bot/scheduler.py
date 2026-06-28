@@ -76,13 +76,12 @@ async def send_scheduled_reports(application: Application) -> None:
             message = f"❌ {department.name} zamanlanmış raporu alınamadı: {exc}"
             await _notify_admins(application, message)
         try:
-            # İhlalleri gönderimden önce işaretle (gönderim başarısız olsa bile tekrar iletilmesin)
+            # İhlalleri gönderimden önce işaretle (aynı ihlal aynı gün tekrar gönderilmesin)
             if report is not None and report.notification_violations:
                 database.mark_notified_violations(department.id, now.date().isoformat(), report.notification_violations)
 
-            if report is not None and not report.should_send:
-                logger.info("Yeni ihlal yok, zamanlanmış rapor gönderilmedi: %s", department.name)
-                continue
+            # Saat başı rapor her zaman gönderilir (ihlal varsa da yoksa da)
+            # Aynı personelin aynı ihlali (aynı violation_key) aynı gün tekrar listelenmez.
             for part in split_telegram_message(message):
                 await _send_message_with_retry(application, chat_id, part)
         except Exception:

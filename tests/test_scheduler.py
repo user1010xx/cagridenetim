@@ -41,7 +41,9 @@ class SchedulerTest(unittest.TestCase):
         generate.assert_not_awaited()
         application.bot.send_message.assert_not_awaited()
 
-    def test_scheduled_report_is_skipped_when_should_send_false(self) -> None:
+    def test_scheduled_report_is_always_sent_even_without_new_violations(self) -> None:
+        # Saat başı rapor her zaman gönderilir (ihlal olsun veya olmasın)
+        # Sadece aynı ihlal aynı gün tekrar listelenmez.
         department = Department(1, "Destek", "COMPANY", "CHAT", True)
         database = SimpleNamespace(
             list_departments=lambda only_active=False: [department],
@@ -49,13 +51,14 @@ class SchedulerTest(unittest.TestCase):
             get_rules=lambda department_id: DepartmentRules(department_id, time(11, 10), None, None, None, None, None, 15, True),
             mark_notified_violations=lambda *args, **kwargs: None,
         )
+        send_message = AsyncMock()
         application = SimpleNamespace(
             bot_data={
                 "config": _config(),
                 "database": database,
                 "client": SimpleNamespace(),
             },
-            bot=SimpleNamespace(send_message=AsyncMock()),
+            bot=SimpleNamespace(send_message=send_message),
         )
 
         with patch(
@@ -65,7 +68,7 @@ class SchedulerTest(unittest.TestCase):
         ):
             asyncio.run(send_scheduled_reports(application))
 
-        application.bot.send_message.assert_not_awaited()
+        send_message.assert_awaited()
 
     def test_send_message_retries_before_success(self) -> None:
         send_message = AsyncMock(side_effect=[RuntimeError("temporary"), None])
