@@ -58,6 +58,7 @@ RESPONSIBLE_ADD_USERNAME = next(_STATE_COUNTER)
 RESPONSIBLE_DELETE_DEPARTMENT = next(_STATE_COUNTER)
 RESPONSIBLE_DELETE_USERNAME = next(_STATE_COUNTER)
 RESPONSIBLE_LIST_DEPARTMENT = next(_STATE_COUNTER)
+IZIN_LIST_DEPARTMENT = next(_STATE_COUNTER)
 WEEKLY_LEAVE_DEPARTMENT = next(_STATE_COUNTER)
 WEEKLY_LEAVE_DAY = next(_STATE_COUNTER)
 WEEKLY_LEAVE_CANCEL_DEPARTMENT = next(_STATE_COUNTER)
@@ -462,6 +463,7 @@ async def kuralayarla_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "weekly_leave",
         "weekly_leave_cancel",
         "weekly_leave_edit",
+        "izin_list",
     ):
         context.user_data.pop(key, None)
     await update.effective_message.reply_text("İşlem iptal edildi.")
@@ -720,21 +722,32 @@ async def iziniptal_personnel(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 @allowed_only
-async def izinlistele(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def izinlistele_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data["izin_list"] = {}
+    await update.effective_message.reply_text("Departman adı giriniz.")
+    return IZIN_LIST_DEPARTMENT
+
+
+@allowed_only
+async def izinlistele_department(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     database: Database = context.application.bot_data["database"]
     config: Config = context.application.bot_data["config"]
-    departments = _departments_visible_in_chat(update, database.list_departments(), config)
-    if not departments:
-        await update.effective_message.reply_text("Bu sohbete bağlı departman bulunamadı.")
-        return
+    dept_input = _message_text(update)
+    department = database.get_department(_identifier(dept_input))
+    if department is None:
+        await update.effective_message.reply_text("Departman bulunamadı. Lütfen departman adı veya ID giriniz.")
+        return IZIN_LIST_DEPARTMENT
+    # Check if visible in this chat (respects group visibility)
+    visible = _departments_visible_in_chat(update, [department], config)
+    if not visible:
+        await update.effective_message.reply_text("Bu departman bu sohbette görünür değil veya yetkiniz yok.")
+        return IZIN_LIST_DEPARTMENT
     lines = ["🟨 İzinli Personeller"]
     has_leave = False
     current_at = datetime.now(config.timezone).isoformat()
-    for department in departments:
-        active_leaves = database.list_active_leave_periods(department.id, current_at)
-        department_weekly_leaves = database.list_department_weekly_leaves(department.id)
-        if not active_leaves and not department_weekly_leaves:
-            continue
+    active_leaves = database.list_active_leave_periods(department.id, current_at)
+    department_weekly_leaves = database.list_department_weekly_leaves(department.id)
+    if active_leaves or department_weekly_leaves:
         has_leave = True
         lines.append("")
         lines.append(f"🏢 {department.name}")
@@ -747,11 +760,13 @@ async def izinlistele(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             for leave in department_weekly_leaves:
                 weekday = WEEKDAY_LABELS.get(int(leave["weekday"]), str(leave["weekday"]))
                 lines.append(f"   • {weekday} - departman haftalık izinli, o gün raporlar atlanır")
+    context.user_data.pop("izin_list", None)
     if not has_leave:
-        await update.effective_message.reply_text("Aktif izinli personel bulunamadı.")
-        return
+        await update.effective_message.reply_text(f"{department.name} için aktif izinli personel bulunamadı.")
+        return ConversationHandler.END
     for message in split_telegram_message("\n".join(lines)):
         await update.effective_message.reply_text(message)
+    return ConversationHandler.END
 
 
 @admin_only

@@ -48,6 +48,7 @@ from bot.handlers import (
     RESPONSIBLE_DELETE_DEPARTMENT,
     RESPONSIBLE_DELETE_USERNAME,
     RESPONSIBLE_LIST_DEPARTMENT,
+    IZIN_LIST_DEPARTMENT,
     chat_id,
     kimim,
     kuralayarla_break_interval,
@@ -97,7 +98,8 @@ from bot.leave_handlers import (
     iziniptal_department,
     iziniptal_personnel,
     iziniptal_start,
-    izinlistele,
+    izinlistele_start,
+    izinlistele_department,
 )
 from bot.personnel_handlers import (
     personel_aktif_start,
@@ -368,7 +370,15 @@ def build_application() -> Application:
             fallbacks=[CommandHandler("iptal", kuralayarla_cancel)],
         )
     )
-    application.add_handler(CommandHandler("izinlistele", izinlistele))
+    application.add_handler(
+        ConversationHandler(
+            entry_points=[CommandHandler("izinlistele", izinlistele_start)],
+            states={
+                IZIN_LIST_DEPARTMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, izinlistele_department)],
+            },
+            fallbacks=[CommandHandler("iptal", kuralayarla_cancel)],
+        )
+    )
     application.add_handler(CommandHandler("kurallistele", kurallistele))
     application.add_handler(CommandHandler("rapor", rapor))
     application.add_handler(CommandHandler("kontrolinvekto", kontrolinvekto))

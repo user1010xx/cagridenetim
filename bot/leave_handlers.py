@@ -13,5 +13,6 @@ from bot.handlers import (
     iziniptal_department,
     iziniptal_personnel,
     iziniptal_start,
-    izinlistele,
+    izinlistele_start,
+    izinlistele_department,
 )
