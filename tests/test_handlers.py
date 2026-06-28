@@ -139,14 +139,16 @@ class HandlerTest(unittest.TestCase):
 
         self.assertFalse(_can_use_admin_command(update, context))
 
-    def test_department_list_in_group_shows_only_group_department(self) -> None:
+    def test_department_list_in_registered_group_shows_all_departments(self) -> None:
+        # When the current group chat has at least one dept registered, allow access to all depts
+        # (no need for ALLOWED_GROUP_NAMES list)
         update = SimpleNamespace(effective_chat=SimpleNamespace(id=-1002, type="group"))
         departments = [
             Department(1, "Satış1", "COMPANY", "-1001", True),
             Department(2, "Satış2", "COMPANY", "-1002", True),
         ]
 
-        self.assertEqual(_departments_visible_in_chat(update, departments), [departments[1]])
+        self.assertEqual(_departments_visible_in_chat(update, departments), departments)
 
     def test_department_list_in_private_chat_shows_all_departments_for_admin(self) -> None:
         update = SimpleNamespace(effective_chat=SimpleNamespace(id=42, type="private"), effective_user=SimpleNamespace(id=42))

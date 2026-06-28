@@ -1047,7 +1047,7 @@ async def rapor(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if department is None:
         await update.effective_message.reply_text("Departman bulunamadı.")
         return
-    if not _can_report_department_in_chat(update, department, config):
+    if not _can_report_department_in_chat(update, department, config, database):
         await update.effective_message.reply_text("Bu departman raporu sadece kayıtlı Telegram grubunda alınabilir.")
         return
     if not database.get_rules(department.id).is_configured:
@@ -1074,7 +1074,7 @@ async def kurallistele(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if department is None:
         await update.effective_message.reply_text("Departman bulunamadı.")
         return
-    if not _can_report_department_in_chat(update, department, config):
+    if not _can_report_department_in_chat(update, department, config, database):
         await update.effective_message.reply_text("Bu departman kuralları sadece kayıtlı Telegram grubunda görüntülenebilir.")
         return
     rules = database.get_rules(department.id)

@@ -40,11 +40,14 @@ def is_registered_department_chat(database: Database | None, chat_id: int) -> bo
     return any(department.telegram_chat_id == str(chat_id) for department in database.list_departments())
 
 
-def can_report_department_in_chat(update: Update, department: Department, config: Config | None = None) -> bool:
+def can_report_department_in_chat(update: Update, department: Department, config: Config | None = None, database: Database | None = None) -> bool:
     chat = update.effective_chat
     if chat is None:
         return False
     if chat.type == "private":
+        return True
+    # If this group has any department registered, allow full access for members
+    if database is not None and is_registered_department_chat(database, chat.id):
         return True
     if config is not None:
         title = (chat.title or "").strip().casefold()
@@ -67,11 +70,15 @@ def departments_visible_in_chat(
             if user is None or user.id not in config.admin_user_ids:
                 return []
         return departments
+    current_chat_str = str(chat.id)
+    # If this chat has any registered department, it's a managed group → show all departments
+    if any(d.telegram_chat_id == current_chat_str for d in departments):
+        return departments
     if config is not None:
         title = (chat.title or "").strip().casefold()
         if title in config.allowed_group_names:
             return departments
-    return [department for department in departments if department.telegram_chat_id == str(chat.id)]
+    return [department for department in departments if department.telegram_chat_id == current_chat_str]
 
 
 def admin_only(handler: Callable) -> Callable:
