@@ -40,12 +40,16 @@ def is_registered_department_chat(database: Database | None, chat_id: int) -> bo
     return any(department.telegram_chat_id == str(chat_id) for department in database.list_departments())
 
 
-def can_report_department_in_chat(update: Update, department: Department) -> bool:
+def can_report_department_in_chat(update: Update, department: Department, config: Config | None = None) -> bool:
     chat = update.effective_chat
     if chat is None:
         return False
     if chat.type == "private":
         return True
+    if config is not None:
+        title = (chat.title or "").strip().casefold()
+        if title in config.allowed_group_names:
+            return True
     return str(chat.id) == department.telegram_chat_id
 
 
@@ -63,6 +67,10 @@ def departments_visible_in_chat(
             if user is None or user.id not in config.admin_user_ids:
                 return []
         return departments
+    if config is not None:
+        title = (chat.title or "").strip().casefold()
+        if title in config.allowed_group_names:
+            return departments
     return [department for department in departments if department.telegram_chat_id == str(chat.id)]
 
 
