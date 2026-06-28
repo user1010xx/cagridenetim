@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from telegram.ext import Application, CommandHandler, ConversationHandler, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, ContextTypes, ConversationHandler, MessageHandler, filters
 
 from bot.config import load_config
 from bot.database import Database
@@ -172,6 +172,11 @@ def build_application() -> Application:
     application.bot_data["config"] = config
     application.bot_data["database"] = database
     application.bot_data["client"] = client
+
+    async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+        logger.error("Exception while handling update: %s", context.error, exc_info=context.error)
+
+    application.add_error_handler(error_handler)
 
     application.add_handler(CommandHandler(["start", "help"], start))
     application.add_handler(CommandHandler("chat_id", chat_id))

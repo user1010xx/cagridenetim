@@ -20,7 +20,8 @@ DEPARTMENT_REPORT_DELAY_SECONDS = 90
 async def run_scheduler(application: Application) -> None:
     config: Config = application.bot_data["config"]
 
-    # Deploy/restart sonrası hemen bir deneme yap (uzun beklemeyi önlemek için)
+    # Deploy/restart sonrası biraz bekle, sonra hemen bir deneme yap
+    await asyncio.sleep(15)
     try:
         await send_scheduled_reports(application)
     except Exception:
