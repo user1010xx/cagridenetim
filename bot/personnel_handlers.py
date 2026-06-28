@@ -1,8 +1,12 @@
 from bot.handlers import (
+    personel_aktif_start,
     personel_listele,
+    personel_pasif_start,
     personel_sil_department,
     personel_sil_name,
     personel_sil_start,
+    personel_toggle_department,
+    personel_toggle_name,
     personelekle_department,
     personelekle_extension,
     personelekle_name,

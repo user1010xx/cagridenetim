@@ -2,6 +2,7 @@ from bot.handlers import (
     haftalikizin_day,
     haftalikizin_department,
     haftalikizin_start,
+    haftalikizinduzenle_action,
     haftalikizinduzenle_start,
     haftalikiziniptal_day,
     haftalikiziniptal_department,

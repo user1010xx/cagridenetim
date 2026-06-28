@@ -19,6 +19,13 @@ DEPARTMENT_REPORT_DELAY_SECONDS = 90
 
 async def run_scheduler(application: Application) -> None:
     config: Config = application.bot_data["config"]
+
+    # Deploy/restart sonrası hemen bir deneme yap (uzun beklemeyi önlemek için)
+    try:
+        await send_scheduled_reports(application)
+    except Exception:
+        logger.exception("Zamanlanmış rapor başlangıç çalıştırmasında hata oluştu.")
+
     while True:
         await asyncio.sleep(_seconds_until_next_run(config))
         try:
@@ -32,6 +39,14 @@ async def send_scheduled_reports(application: Application) -> None:
     database: Database = application.bot_data["database"]
     client: InvektoClient = application.bot_data["client"]
     now = datetime.now(config.timezone)
+    application.bot_data["last_scheduler_run"] = now.isoformat()
+
+    # Her zaman eski notified ihlalleri temizle (sadece bugünün kayıtları kalsın)
+    try:
+        database.cleanup_old_notified_violations(now.date().isoformat())
+    except Exception:
+        logger.warning("Eski notified ihlaller temizlenemedi", exc_info=True)
+
     if not _is_within_report_window(config, now):
         logger.info("Zamanlanmış rapor saati dışında: %s", now.strftime("%H:%M"))
         return
@@ -58,14 +73,17 @@ async def send_scheduled_reports(application: Application) -> None:
         except Exception as exc:
             chat_id = department.telegram_chat_id
             message = f"❌ {department.name} zamanlanmış raporu alınamadı: {exc}"
+            await _notify_admins(application, message)
         try:
+            # İhlalleri gönderimden önce işaretle (gönderim başarısız olsa bile tekrar iletilmesin)
+            if report is not None and report.notification_violations:
+                database.mark_notified_violations(department.id, now.date().isoformat(), report.notification_violations)
+
             if report is not None and not report.should_send:
                 logger.info("Yeni ihlal yok, zamanlanmış rapor gönderilmedi: %s", department.name)
                 continue
             for part in split_telegram_message(message):
                 await _send_message_with_retry(application, chat_id, part)
-            if report is not None and report.notification_violations:
-                database.mark_notified_violations(department.id, now.date().isoformat(), report.notification_violations)
         except Exception:
             logger.exception("Zamanlanmış rapor gönderilemedi: %s", department.name)
         if _should_wait_before_next_department(index, len(departments)):
@@ -104,3 +122,14 @@ def _is_within_report_window(config: Config, now: datetime) -> bool:
 
 def _should_wait_before_next_department(index: int, department_count: int) -> bool:
     return index < department_count - 1
+
+
+async def _notify_admins(application: Application, message: str) -> None:
+    config: Config = application.bot_data["config"]
+    if not config.admin_user_ids:
+        return
+    for admin_id in config.admin_user_ids:
+        try:
+            await application.bot.send_message(chat_id=admin_id, text=message)
+        except Exception:
+            logger.warning("Admin bildirimi gönderilemedi: %s", admin_id, exc_info=True)

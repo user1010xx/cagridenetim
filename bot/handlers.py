@@ -9,10 +9,19 @@ from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes, ConversationHandler
 
+from bot.access import (
+    admin_only,
+    allowed_only,
+    can_report_department_in_chat as _can_report_department_in_chat,
+    can_use_admin_command as _can_use_admin_command,
+    departments_visible_in_chat as _departments_visible_in_chat,
+    is_allowed as _is_allowed,
+    is_registered_department_chat as _is_registered_department_chat,
+)
 from bot.config import Config
 from bot.database import Database
 from bot.handler_utils import date_for_weekday_in_current_week, find_personnel_by_name
-from bot.invekto_client import InvektoClient
+from bot.invekto_client import InvektoClient, InvektoConnectionError, InvektoTimeoutError
 from bot.models import Department, DepartmentRules, Personnel
 from bot.personnel_import import PersonnelImportRow, parse_personnel_workbook
 from bot.reporting import split_telegram_message
@@ -54,6 +63,10 @@ WEEKLY_LEAVE_DAY = next(_STATE_COUNTER)
 WEEKLY_LEAVE_CANCEL_DEPARTMENT = next(_STATE_COUNTER)
 WEEKLY_LEAVE_CANCEL_DAY = next(_STATE_COUNTER)
 DEPARTMENT_DELETE_IDENTIFIER = next(_STATE_COUNTER)
+WEEKLY_LEAVE_EDIT_ACTION = next(_STATE_COUNTER)
+PERSONNEL_TOGGLE_DEPARTMENT = next(_STATE_COUNTER)
+PERSONNEL_TOGGLE_NAME = next(_STATE_COUNTER)
+PERSONNEL_TOGGLE_ACTION = next(_STATE_COUNTER)
 
 
 WEEKDAY_NAMES = {
@@ -99,6 +112,8 @@ Temel komutlar:
 /personeltopluekle - Excel dosyasıyla toplu personel ekler
 /personel_listele Departman
 /personel_sil - Personeli departman ve ad ile siler
+/personel_pasif - Personeli pasif yapar
+/personel_aktif - Personeli tekrar aktif yapar
 /rapor DepartmanAdı veya ID - Tek departman kontrol eder
 /kontrolinvekto DepartmanAdı veya ID - Invekto erişimini test eder
 /izin - Personeli geçici izinli yapar
@@ -115,62 +130,25 @@ Not: Departman ve kural bilgileri bot veritabanında tutulur; Railway env içine
 """.strip()
 
 
-def admin_only(handler: Callable) -> Callable:
-    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        if not _can_use_admin_command(update, context):
-            await update.effective_message.reply_text("Bu botu bu sohbet içinde kullanma yetkiniz yok.")
-            return ConversationHandler.END
-        return await handler(update, context)
-
-    return wrapper
-
-
-def allowed_only(handler: Callable) -> Callable:
-    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        if not _is_allowed(update, context):
-            await update.effective_message.reply_text("Bu botu kullanma yetkiniz yok.")
-            return
-        return await handler(update, context)
-
-    return wrapper
-
-
-def _is_allowed(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    config: Config = context.application.bot_data["config"]
-    chat = update.effective_chat
-    user = update.effective_user
-    if chat is None:
-        return False
-    if user is not None and user.id in config.admin_user_ids:
-        return True
-    if chat.type == "private":
-        return False
-    title = (chat.title or "").strip().casefold()
-    if title in config.allowed_group_names:
-        return True
-    return _is_registered_department_chat(context.application.bot_data.get("database"), chat.id)
-
-
-def _can_use_admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    config: Config = context.application.bot_data["config"]
-    chat = update.effective_chat
-    user = update.effective_user
-    if chat is None:
-        return False
-    if chat.type == "private":
-        return user is not None and user.id in config.admin_user_ids
-    return _is_allowed(update, context)
-
-
-def _is_registered_department_chat(database: Database | None, chat_id: int) -> bool:
-    if database is None:
-        return False
-    return any(department.telegram_chat_id == str(chat_id) for department in database.list_departments())
-
-
 @allowed_only
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.effective_message.reply_text(HELP_TEXT)
+    database: Database = context.application.bot_data["database"]
+    config: Config = context.application.bot_data["config"]
+    lines = [HELP_TEXT]
+    if not database.list_departments():
+        lines.extend(
+            [
+                "",
+                "🚀 İlk kurulum önerisi:",
+                "1. /kimim ile Telegram kullanıcı ID'nizi alın",
+                "2. Railway'de ADMIN_USER_IDS değerine bu ID'yi ekleyin",
+                "3. /departmanekle ile ilk departmanı oluşturun",
+                "4. /kuralayarla ve /personelekle ile kurulumu tamamlayın",
+            ]
+        )
+    elif not config.admin_user_ids:
+        lines.extend(["", "⚠️ ADMIN_USER_IDS tanımlı değil. Admin komutları çalışmayabilir."])
+    await update.effective_message.reply_text("\n".join(lines))
 
 
 @allowed_only
@@ -244,19 +222,6 @@ async def departman_listele(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             f"{department.id}. {department.name} | {status} | code: {department.company_code} | chat: {department.telegram_chat_id} | {rule_text}"
         )
     await update.effective_message.reply_text("\n".join(lines))
-
-
-def _departments_visible_in_chat(update: Update, departments: list[Department], config: Config | None = None) -> list[Department]:
-    chat = update.effective_chat
-    if chat is None:
-        return []
-    if chat.type == "private":
-        if config is not None:
-            user = update.effective_user
-            if user is None or user.id not in config.admin_user_ids:
-                return []
-        return departments
-    return [department for department in departments if department.telegram_chat_id == str(chat.id)]
 
 
 @admin_only
@@ -485,15 +450,18 @@ async def kuralayarla_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data.pop("company_code_setup", None)
     context.user_data.pop("chat_setup", None)
     context.user_data.pop("personnel_add", None)
+    context.user_data.pop("department_delete", None)
     for key in (
         "leave_setup",
         "leave_cancel_setup",
         "personnel_delete",
+        "personnel_toggle",
         "responsible_add",
         "responsible_delete",
         "responsible_list",
         "weekly_leave",
         "weekly_leave_cancel",
+        "weekly_leave_edit",
     ):
         context.user_data.pop(key, None)
     await update.effective_message.reply_text("İşlem iptal edildi.")
@@ -676,10 +644,24 @@ async def izin_personnel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if department is None:
         await update.effective_message.reply_text("İzin oturumu bulunamadı. Lütfen /izin ile tekrar başlayın.")
         return ConversationHandler.END
-    database.start_leave(department.id, personnel_name, datetime.now(config.timezone).isoformat())
+    personnel_list = database.list_personnel(department.id, only_active=False)
+    personnel = find_personnel_by_name(personnel_list, personnel_name)
+    if personnel is None:
+        names = [p.name for p in personnel_list[:8]]
+        names_text = ", ".join(names) + (" ..." if len(personnel_list) > 8 else "")
+        await update.effective_message.reply_text(
+            "İlgili personel yok. Lütfen personel adını **tam olarak** listedeki gibi giriniz."
+            + (f"\nBu departmandaki personeller: {names_text}" if names_text else "")
+        )
+        return LEAVE_PERSONNEL
+    current_at = datetime.now(config.timezone).isoformat()
+    if database.has_active_leave(department.id, personnel.name, current_at):
+        await update.effective_message.reply_text(f"{personnel.name} zaten izinli görünüyor. Önce /iziniptal kullanınız.")
+        return LEAVE_PERSONNEL
+    database.start_leave(department.id, personnel.name, current_at)
     context.user_data.pop("leave_setup", None)
     await update.effective_message.reply_text("Ayarlandı.")
-    await update.effective_message.reply_text(f"✅ {personnel_name} izinli olarak işaretlendi.")
+    await update.effective_message.reply_text(f"✅ {personnel.name} izinli olarak işaretlendi.")
     return ConversationHandler.END
 
 
@@ -707,20 +689,33 @@ async def iziniptal_personnel(update: Update, context: ContextTypes.DEFAULT_TYPE
     config: Config = context.application.bot_data["config"]
     setup = context.user_data.get("leave_cancel_setup", {})
     department = setup.get("department")
-    personnel_name = _message_text(update)
+    typed_name = _message_text(update)
     if department is None:
         await update.effective_message.reply_text("İzin iptal oturumu bulunamadı. Lütfen /iziniptal ile tekrar başlayın.")
         return ConversationHandler.END
-    personnel = find_personnel_by_name(database.list_personnel(department.id, only_active=False), personnel_name)
-    if personnel is None:
-        await update.effective_message.reply_text("İlgili personel yok. Lütfen personel adını listedeki gibi giriniz.")
+
+    personnel_list = database.list_personnel(department.id, only_active=False)
+    personnel = find_personnel_by_name(personnel_list, typed_name)
+
+    # İptal için daha esnek ol: kayıtlı personel bulunamazsa bile leave tablosundaki isme göre iptal et (önceki hatalı girişleri temizlemek için)
+    name_to_use = personnel.name if personnel else typed_name.strip()
+
+    if not database.end_leave(department.id, name_to_use, datetime.now(config.timezone).isoformat()):
+        # Hata mesajı için yardımcı bilgi ver
+        if personnel_list:
+            names = [p.name for p in personnel_list[:6]]
+            names_text = ", ".join(names) + (" ..." if len(personnel_list) > 6 else "")
+            await update.effective_message.reply_text(
+                "Aktif izin kaydı bulunamadı. İptal edilecek personel adını tam olarak giriniz."
+                + (f"\nKayıtlı personeller: {names_text}" if names_text else "")
+            )
+        else:
+            await update.effective_message.reply_text("Aktif izin kaydı bulunamadı.")
         return LEAVE_CANCEL_PERSONNEL
-    if not database.end_leave(department.id, personnel.name, datetime.now(config.timezone).isoformat()):
-        await update.effective_message.reply_text("Aktif izin kaydı bulunamadı.")
-        return LEAVE_CANCEL_PERSONNEL
+
     context.user_data.pop("leave_cancel_setup", None)
     await update.effective_message.reply_text("Ayarlandı.")
-    await update.effective_message.reply_text(f"✅ {personnel.name} tekrar kontrole dahil edildi.")
+    await update.effective_message.reply_text(f"✅ {name_to_use} tekrar kontrole dahil edildi.")
     return ConversationHandler.END
 
 
@@ -751,7 +746,7 @@ async def izinlistele(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             lines.append("Haftalık departman izinleri:")
             for leave in department_weekly_leaves:
                 weekday = WEEKDAY_LABELS.get(int(leave["weekday"]), str(leave["weekday"]))
-                lines.append(f"   • {weekday} - departmandaki personeller izinli, saatlik otomatik rapor gönderilmez")
+                lines.append(f"   • {weekday} - departman haftalık izinli, o gün raporlar atlanır")
     if not has_leave:
         await update.effective_message.reply_text("Aktif izinli personel bulunamadı.")
         return
@@ -858,7 +853,14 @@ async def sorumlulistele_department(update: Update, context: ContextTypes.DEFAUL
 
 @admin_only
 async def haftalikizin_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["weekly_leave"] = {}
+    context.user_data["weekly_leave"] = {"mode": "add"}
+    await update.effective_message.reply_text("Departman adını giriniz.")
+    return WEEKLY_LEAVE_DEPARTMENT
+
+
+@admin_only
+async def haftalikizinduzenle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data["weekly_leave_edit"] = {}
     await update.effective_message.reply_text("Departman adını giriniz.")
     return WEEKLY_LEAVE_DEPARTMENT
 
@@ -869,7 +871,17 @@ async def haftalikizin_department(update: Update, context: ContextTypes.DEFAULT_
     if department is None:
         await update.effective_message.reply_text("Departman bulunamadı. Lütfen departman adı veya ID giriniz.")
         return WEEKLY_LEAVE_DEPARTMENT
-    context.user_data["weekly_leave"] = {"department": department}
+    if "weekly_leave_edit" in context.user_data:
+        current_days = database.list_department_weekly_leaves(department.id)
+        context.user_data["weekly_leave_edit"] = {"department": department}
+        if current_days:
+            labels = ", ".join(WEEKDAY_LABELS[int(row["weekday"])] for row in current_days)
+            await update.effective_message.reply_text(f"Mevcut haftalık izin günleri: {labels}")
+        else:
+            await update.effective_message.reply_text("Bu departmanda tanımlı haftalık izin günü yok.")
+        await update.effective_message.reply_text("Yeni gün eklemek için gün adı yazınız. Tümünü kaldırmak için `tümünü kaldır` yazınız.")
+        return WEEKLY_LEAVE_EDIT_ACTION
+    context.user_data["weekly_leave"] = {"mode": "add", "department": department}
     await update.effective_message.reply_text("Ayarlandı.")
     await update.effective_message.reply_text("Haftalık rapor izin gününü giriniz. Örnek: pazartesi")
     return WEEKLY_LEAVE_DAY
@@ -890,7 +902,7 @@ async def haftalikizin_day(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     context.user_data.pop("weekly_leave", None)
     await update.effective_message.reply_text("Ayarlandı.")
     await update.effective_message.reply_text(
-        f"✅ {department.name} için {WEEKDAY_LABELS[weekday]} günü saatlik otomatik rapor kapatıldı. Manuel /rapor çalışmaya devam eder."
+        f"✅ {department.name} için {WEEKDAY_LABELS[weekday]} günü haftalık departman izni tanımlandı. O gün otomatik ve manuel raporlar atlanır."
     )
     return ConversationHandler.END
 
@@ -943,7 +955,82 @@ async def haftalikiziniptal_day(update: Update, context: ContextTypes.DEFAULT_TY
     return ConversationHandler.END
 
 
-haftalikizinduzenle_start = haftalikizin_start
+async def haftalikizinduzenle_action(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    database: Database = context.application.bot_data["database"]
+    setup = context.user_data.get("weekly_leave_edit", {})
+    department = setup.get("department")
+    text = _message_text(update)
+    if department is None:
+        await update.effective_message.reply_text("Haftalık izin düzenleme oturumu bulunamadı. Lütfen /haftalikizinduzenle ile tekrar başlayın.")
+        return ConversationHandler.END
+    if text.casefold() == "tümünü kaldır":
+        database.delete_department_weekly_leave(department.id)
+        context.user_data.pop("weekly_leave_edit", None)
+        await update.effective_message.reply_text(f"✅ {department.name} için tüm haftalık izin günleri kaldırıldı.")
+        return ConversationHandler.END
+    weekday = _parse_weekday(text)
+    if weekday is None:
+        await update.effective_message.reply_text("Gün adı geçersiz. Örnek: pazartesi veya tümünü kaldır")
+        return WEEKLY_LEAVE_EDIT_ACTION
+    database.add_department_weekly_leave(department.id, weekday)
+    context.user_data.pop("weekly_leave_edit", None)
+    await update.effective_message.reply_text(
+        f"✅ {department.name} için {WEEKDAY_LABELS[weekday]} günü haftalık izin olarak kaydedildi."
+    )
+    return ConversationHandler.END
+
+
+@admin_only
+async def personel_pasif_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data["personnel_toggle"] = {"active": False}
+    await update.effective_message.reply_text("Departman adını giriniz.")
+    return PERSONNEL_TOGGLE_DEPARTMENT
+
+
+@admin_only
+async def personel_aktif_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data["personnel_toggle"] = {"active": True}
+    await update.effective_message.reply_text("Departman adını giriniz.")
+    return PERSONNEL_TOGGLE_DEPARTMENT
+
+
+async def personel_toggle_department(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    database: Database = context.application.bot_data["database"]
+    setup = context.user_data.get("personnel_toggle", {})
+    department = database.get_department(_identifier(_message_text(update)))
+    if department is None:
+        await update.effective_message.reply_text("Departman bulunamadı. Lütfen departman adı veya ID giriniz.")
+        return PERSONNEL_TOGGLE_DEPARTMENT
+    setup["department"] = department
+    context.user_data["personnel_toggle"] = setup
+    await update.effective_message.reply_text("Ayarlandı.")
+    await update.effective_message.reply_text("Personel adını giriniz.")
+    return PERSONNEL_TOGGLE_NAME
+
+
+async def personel_toggle_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    database: Database = context.application.bot_data["database"]
+    setup = context.user_data.get("personnel_toggle", {})
+    department = setup.get("department")
+    active = setup.get("active", True)
+    if department is None:
+        await update.effective_message.reply_text("Personel durum oturumu bulunamadı.")
+        return ConversationHandler.END
+    personnel = find_personnel_by_name(database.list_personnel(department.id, only_active=False), _message_text(update))
+    if personnel is None:
+        await update.effective_message.reply_text("İlgili personel yok. Lütfen personel adını listedeki gibi giriniz.")
+        return PERSONNEL_TOGGLE_NAME
+    if personnel.is_active == active:
+        status = "aktif" if active else "pasif"
+        await update.effective_message.reply_text(f"{personnel.name} zaten {status}.")
+        return PERSONNEL_TOGGLE_NAME
+    if not database.set_personnel_active(personnel.id, active):
+        await update.effective_message.reply_text("Personel durumu güncellenemedi.")
+        return PERSONNEL_TOGGLE_NAME
+    context.user_data.pop("personnel_toggle", None)
+    status = "aktif" if active else "pasif"
+    await update.effective_message.reply_text(f"✅ {personnel.name} {status} olarak işaretlendi.")
+    return ConversationHandler.END
 
 
 @allowed_only
@@ -991,15 +1078,6 @@ async def kurallistele(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
     rules = database.get_rules(department.id)
     await update.effective_message.reply_text(_format_rules_list(department, rules))
-
-
-def _can_report_department_in_chat(update: Update, department: Department) -> bool:
-    chat = update.effective_chat
-    if chat is None:
-        return False
-    if chat.type == "private":
-        return True
-    return str(chat.id) == department.telegram_chat_id
 
 
 def _format_rules_list(department: Department, rules: DepartmentRules) -> str:
@@ -1052,8 +1130,10 @@ async def kontrolinvekto(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         message = _format_invekto_http_error(department.name, exc)
     except URLError as exc:
         message = f"❌ {department.name} için Invekto bağlantısı kurulamadı: {exc.reason}"
-    except TimeoutError:
+    except InvektoTimeoutError:
         message = f"❌ {department.name} için Invekto isteği zaman aşımına uğradı."
+    except InvektoConnectionError as exc:
+        message = f"❌ {department.name} için Invekto bağlantısı kurulamadı: {exc}"
     except RuntimeError as exc:
         message = f"❌ {department.name} için Invekto yanıtı başarısız: {exc}"
     except Exception as exc:
@@ -1063,6 +1143,7 @@ async def kontrolinvekto(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await update.effective_message.reply_text(message)
 
 
+@allowed_only
 async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.effective_message.reply_text("Bilinmeyen komut. /start ile komut listesini görebilirsin.")
 

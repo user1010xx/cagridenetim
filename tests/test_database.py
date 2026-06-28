@@ -60,6 +60,33 @@ class DatabaseMigrationTest(unittest.TestCase):
         finally:
             os.remove(path)
 
+    def test_personnel_active_flag_can_be_toggled(self) -> None:
+        fd, path = tempfile.mkstemp(suffix=".sqlite3")
+        os.close(fd)
+        try:
+            database = Database(path)
+            department = database.add_department("Destek", "COMPANY", "CHAT")
+            personnel = database.add_personnel(department.id, "Ayşe", "101")
+            self.assertTrue(database.set_personnel_active(personnel.id, False))
+            updated = database.get_personnel(personnel.id)
+            self.assertIsNotNone(updated)
+            self.assertFalse(updated.is_active)
+        finally:
+            os.remove(path)
+
+    def test_has_active_leave_detects_open_leave_period(self) -> None:
+        fd, path = tempfile.mkstemp(suffix=".sqlite3")
+        os.close(fd)
+        try:
+            database = Database(path)
+            department = database.add_department("Destek", "COMPANY", "CHAT")
+            database.add_personnel(department.id, "Ayşe", "101")
+            database.start_leave(department.id, "Ayşe", "2026-06-10T10:00:00+03:00")
+            self.assertTrue(database.has_active_leave(department.id, "Ayşe", "2026-06-10T12:00:00+03:00"))
+            self.assertFalse(database.has_active_leave(department.id, "Ayşe", "2026-06-10T09:00:00+03:00"))
+        finally:
+            os.remove(path)
+
     def test_notified_violations_are_deduplicated(self) -> None:
         fd, path = tempfile.mkstemp(suffix=".sqlite3")
         os.close(fd)
@@ -138,6 +165,28 @@ class DatabaseMigrationTest(unittest.TestCase):
 
             self.assertFalse(database.is_department_weekly_leave(department.id, 3, "2026-06-11"))
             self.assertTrue(database.is_department_weekly_leave(department.id, 3, "2026-06-18"))
+        finally:
+            os.remove(path)
+
+    def test_cleanup_old_notified_violations_keeps_only_current_day(self) -> None:
+        fd, path = tempfile.mkstemp(suffix=".sqlite3")
+        os.close(fd)
+        try:
+            database = Database(path)
+            department = database.add_department("Satış", "COMPANY", "CHAT")
+            # Eski gün
+            database.mark_notified_violations(department.id, "2026-06-09", [("Ahmet", "mesai başlangıcı ihlali")])
+            # Bugün
+            database.mark_notified_violations(department.id, "2026-06-10", [("Ahmet", "güncel bekleme ihlali")])
+
+            removed = database.cleanup_old_notified_violations("2026-06-10")
+            self.assertGreaterEqual(removed, 1)
+
+            remaining = database.list_notified_violations(department.id, "2026-06-10")
+            self.assertIn(("ahmet", "güncel bekleme ihlali"), remaining)
+
+            old_remaining = database.list_notified_violations(department.id, "2026-06-09")
+            self.assertEqual(len(old_remaining), 0)
         finally:
             os.remove(path)
 

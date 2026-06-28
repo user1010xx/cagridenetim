@@ -82,6 +82,8 @@ RING_DURATION_FIELDS = (
     "ÇALDIRMA SÜRESİ",
     "CALDIRMA SURESI",
 )
+ALLOWED_EVENT_TYPES = {"1", "2"}
+
 WAIT_DURATION_FIELDS = (
     "WaitTimeSecond",
     "WAITTIMESECOND",
@@ -125,6 +127,8 @@ def normalize_calls(raw_calls: list[dict[str, object]], timezone: ZoneInfo) -> l
     records: list[CallRecord] = []
     for item in raw_calls:
         event_type = str(_first_value(item, "EventType", "EVENTTYPE") or "").strip()
+        if event_type and event_type not in ALLOWED_EVENT_TYPES:
+            continue
         duration = _call_duration_seconds(item)
         if duration <= 0:
             continue
@@ -172,9 +176,7 @@ def evaluate_department(
     now: datetime,
     timezone: ZoneInfo,
     leave_periods: dict[str, list[tuple[datetime, datetime | None]]] | None = None,
-    weekly_leave_names: set[str] | None = None,
 ) -> list[PersonnelEvaluation]:
-    weekly_leave_names = weekly_leave_names or set()
     grouped = _group_calls(calls, personnel)
     evaluations: list[PersonnelEvaluation] = []
     if personnel:
@@ -195,7 +197,7 @@ def evaluate_department(
         total_call_count = len(person_calls)
         total_call_duration_seconds = sum(_report_duration_seconds(call) for call in person_calls)
         person_leave_periods = _leave_periods_for_person(person, leave_periods or {})
-        is_on_leave = person.name.casefold() in weekly_leave_names or _is_on_leave_at(now, person_leave_periods)
+        is_on_leave = _is_on_leave_at(now, person_leave_periods)
         if is_on_leave:
             evaluations.append(
                 PersonnelEvaluation(
@@ -252,7 +254,10 @@ def _group_calls(calls: list[CallRecord], personnel: list[Personnel]) -> dict[st
         name = extension_to_name.get(call_extension)
         if name is None:
             clean_call_name = _clean_extension_name(call.extension_name)
-            name = known_names.get(_normalize_person_name(clean_call_name), clean_call_name)
+            normalized_call_name = _normalize_person_name(clean_call_name)
+            name = known_names.get(normalized_call_name)
+            if name is None:
+                name = _best_known_name_match(normalized_call_name, known_names) or clean_call_name
         grouped.setdefault(name, []).append(call)
     return grouped
 
@@ -739,6 +744,53 @@ def _extension_from_text(value: object) -> str | None:
 
 def _normalize_person_name(value: object) -> str:
     return _normalize_key(value)
+
+
+def _best_known_name_match(normalized_call_name: str, known_names: dict[str, str]) -> str | None:
+    if not normalized_call_name or not known_names:
+        return None
+    for normalized_person_name, person_name in known_names.items():
+        if normalized_call_name in normalized_person_name or normalized_person_name in normalized_call_name:
+            return person_name
+    best_name: str | None = None
+    best_score = 0.0
+    for normalized_person_name, person_name in known_names.items():
+        if len(normalized_person_name) < 4 or len(normalized_call_name) < 4:
+            continue
+        score = SequenceMatcher(None, normalized_call_name, normalized_person_name).ratio()
+        if score >= 0.88 and score > best_score:
+            best_name = person_name
+            best_score = score
+    return best_name
+
+
+def find_unmatched_call_names(calls: list[CallRecord], personnel: list[Personnel]) -> list[str]:
+    if not personnel:
+        return []
+    known_names = {_normalize_person_name(person.name) for person in personnel}
+    unmatched: list[str] = []
+    seen: set[str] = set()
+    for call in calls:
+        clean_name = _clean_extension_name(call.extension_name)
+        normalized_name = _normalize_person_name(clean_name)
+        if normalized_name in known_names:
+            continue
+        if _best_known_name_match(normalized_name, {_normalize_person_name(person.name): person.name for person in personnel}):
+            continue
+        if call.extension:
+            extension_match = any(
+                _normalize_extension(person.extension) == _normalize_extension(call.extension)
+                for person in personnel
+                if person.extension
+            )
+            if extension_match:
+                continue
+        key = normalized_name or clean_name.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        unmatched.append(clean_name)
+    return sorted(unmatched, key=str.casefold)
 
 
 def _normalize_key(value: object) -> str:

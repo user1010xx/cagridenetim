@@ -3,7 +3,7 @@ from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
 from bot.models import DepartmentRules, Personnel
-from bot.rules import CallRecord, PersonnelEvaluation, evaluate_department, normalize_calls
+from bot.rules import CallRecord, PersonnelEvaluation, evaluate_department, find_unmatched_call_names, normalize_calls
 from bot.service import _filter_notified_violations, _violation_keys
 
 
@@ -249,20 +249,6 @@ class RulesTest(unittest.TestCase):
         )
         self.assertTrue(any("Çağrı arası" in violation for violation in result.violations))
 
-    def test_personnel_on_weekly_leave_is_reported_as_leave(self) -> None:
-        result = evaluate_department(
-            [],
-            self.personnel,
-            self.rules,
-            self.report_date,
-            dt("19:00"),
-            TZ,
-            weekly_leave_names={"ali"},
-        )
-        self.assertEqual(len(result), 1)
-        self.assertTrue(result[0].is_on_leave)
-        self.assertEqual(result[0].violations, [])
-
     def test_calls_during_leave_period_are_not_evaluated(self) -> None:
         result = evaluate_department(
             [call("Ali", "11:20", extension="1001"), call("Ali", "18:55", extension="1001")],
@@ -484,7 +470,7 @@ class RulesTest(unittest.TestCase):
         self.assertEqual(records[0].duration_seconds, 19)
         self.assertEqual(records[0].talk_duration_seconds, 9)
 
-    def test_normalize_calls_does_not_drop_unknown_event_type(self) -> None:
+    def test_normalize_calls_drops_unknown_event_type(self) -> None:
         records = normalize_calls(
             [
                 {
@@ -492,14 +478,13 @@ class RulesTest(unittest.TestCase):
                     "Time": "11:45:40",
                     "CallTimeSecond": "5",
                     "ExtensionName": "Ali",
-                    "EventType": "Conversation",
+                    "EventType": "3",
                 }
             ],
             TZ,
         )
 
-        self.assertEqual(len(records), 1)
-        self.assertEqual(records[0].event_type, "Conversation")
+        self.assertEqual(records, [])
 
     def test_normalize_calls_does_not_use_extension_number_as_name(self) -> None:
         records = normalize_calls(
@@ -741,6 +726,22 @@ class RulesTest(unittest.TestCase):
             _violation_keys(evaluations),
             [("ayşe", "güncel bekleme ihlali"), ("ayşe", "güncel bekleme ihlali")],
         )
+
+    def test_find_unmatched_call_names_reports_unknown_api_people(self) -> None:
+        calls = [
+            call("Ali", "11:10", extension="1001"),
+            call("Mehmet Yılmaz", "11:20", extension="2001"),
+        ]
+        personnel = [Personnel(1, 1, "Ali", "1001", True)]
+
+        self.assertEqual(find_unmatched_call_names(calls, personnel), ["Mehmet Yılmaz"])
+
+    def test_find_unmatched_call_names_matches_partial_name(self) -> None:
+        calls = [call("Ali Kaya", "11:10", extension="1001")]
+        personnel = [Personnel(1, 1, "Ali Kaya Demir", "1001", True)]
+
+        self.assertEqual(find_unmatched_call_names(calls, personnel), [])
+
 
 if __name__ == "__main__":
     unittest.main()

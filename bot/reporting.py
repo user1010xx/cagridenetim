@@ -22,6 +22,7 @@ def build_department_report(
     processed_call_count: int | None = None,
     raw_call_sample_keys: list[str] | None = None,
     new_violations_only: bool = False,
+    unmatched_call_names: list[str] | None = None,
 ) -> str:
     violation_count = sum(len(evaluation.violations) for evaluation in evaluations)
     ok_count = sum(1 for evaluation in evaluations if not evaluation.violations)
@@ -58,6 +59,14 @@ def build_department_report(
             [
                 "ℹ️ Bu departmanda personel listesi tanımlı değil.",
                 "Sadece API'de çağrısı görünen kişiler kontrol edildi.",
+                "",
+            ]
+        )
+    elif unmatched_call_names:
+        lines.extend(
+            [
+                "⚠️ Personel listesinde eşleşmeyen API çağrıları:",
+                *(f"   • {name}" for name in unmatched_call_names),
                 "",
             ]
         )

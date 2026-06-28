@@ -41,6 +41,8 @@ from bot.handlers import (
     PERSONNEL_BULK_FILE,
     PERSONNEL_DELETE_DEPARTMENT,
     PERSONNEL_DELETE_NAME,
+    PERSONNEL_TOGGLE_DEPARTMENT,
+    PERSONNEL_TOGGLE_NAME,
     RESPONSIBLE_ADD_DEPARTMENT,
     RESPONSIBLE_ADD_USERNAME,
     RESPONSIBLE_DELETE_DEPARTMENT,
@@ -76,6 +78,7 @@ from bot.handlers import (
     WEEKLY_LEAVE_CANCEL_DEPARTMENT,
     WEEKLY_LEAVE_DAY,
     WEEKLY_LEAVE_DEPARTMENT,
+    WEEKLY_LEAVE_EDIT_ACTION,
     start,
     unknown,
 )
@@ -83,6 +86,7 @@ from bot.leave_handlers import (
     haftalikizin_day,
     haftalikizin_department,
     haftalikizin_start,
+    haftalikizinduzenle_action,
     haftalikizinduzenle_start,
     haftalikiziniptal_day,
     haftalikiziniptal_department,
@@ -96,10 +100,14 @@ from bot.leave_handlers import (
     izinlistele,
 )
 from bot.personnel_handlers import (
+    personel_aktif_start,
     personel_listele,
+    personel_pasif_start,
     personel_sil_department,
     personel_sil_name,
     personel_sil_start,
+    personel_toggle_department,
+    personel_toggle_name,
     personelekle_department,
     personelekle_extension,
     personelekle_name,
@@ -108,8 +116,10 @@ from bot.personnel_handlers import (
     personeltopluekle_start,
 )
 from bot.report_handlers import kontrolinvekto, kurallistele, rapor
+from bot.health import run_health_server
 from bot.invekto_client import InvektoClient
 from bot.scheduler import run_scheduler
+from bot.startup_checks import validate_runtime_setup
 
 
 logging.basicConfig(
@@ -125,13 +135,40 @@ async def post_init(application: Application) -> None:
         run_scheduler(application),
         name="hourly-report-scheduler",
     )
+    application.bot_data["health_task"] = asyncio.create_task(
+        run_health_server(application),
+        name="health-server",
+    )
+
+
+async def post_shutdown(application: Application) -> None:
+    for task_name in ("scheduler_task", "health_task"):
+        task = application.bot_data.get(task_name)
+        if task is None:
+            continue
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+    health_server = application.bot_data.get("health_server")
+    if health_server is not None:
+        health_server.close()
+        await health_server.wait_closed()
 
 
 def build_application() -> Application:
     config = load_config()
+    validate_runtime_setup(config.database_path)
     database = Database(config.database_path)
     client = InvektoClient(config.invekto_api_url, config.request_timeout_seconds)
-    application = Application.builder().token(config.telegram_bot_token).post_init(post_init).build()
+    application = (
+        Application.builder()
+        .token(config.telegram_bot_token)
+        .post_init(post_init)
+        .post_shutdown(post_shutdown)
+        .build()
+    )
     application.bot_data["config"] = config
     application.bot_data["database"] = database
     application.bot_data["client"] = client
@@ -267,10 +304,20 @@ def build_application() -> Application:
     )
     application.add_handler(
         ConversationHandler(
-            entry_points=[CommandHandler(["haftalikizin", "haftalikizinduzenle"], haftalikizin_start)],
+            entry_points=[CommandHandler("haftalikizin", haftalikizin_start)],
             states={
                 WEEKLY_LEAVE_DEPARTMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, haftalikizin_department)],
                 WEEKLY_LEAVE_DAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, haftalikizin_day)],
+            },
+            fallbacks=[CommandHandler("iptal", kuralayarla_cancel)],
+        )
+    )
+    application.add_handler(
+        ConversationHandler(
+            entry_points=[CommandHandler("haftalikizinduzenle", haftalikizinduzenle_start)],
+            states={
+                WEEKLY_LEAVE_DEPARTMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, haftalikizin_department)],
+                WEEKLY_LEAVE_EDIT_ACTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, haftalikizinduzenle_action)],
             },
             fallbacks=[CommandHandler("iptal", kuralayarla_cancel)],
         )
@@ -286,6 +333,26 @@ def build_application() -> Application:
         )
     )
     application.add_handler(CommandHandler("personel_listele", personel_listele))
+    application.add_handler(
+        ConversationHandler(
+            entry_points=[CommandHandler("personel_pasif", personel_pasif_start)],
+            states={
+                PERSONNEL_TOGGLE_DEPARTMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, personel_toggle_department)],
+                PERSONNEL_TOGGLE_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, personel_toggle_name)],
+            },
+            fallbacks=[CommandHandler("iptal", kuralayarla_cancel)],
+        )
+    )
+    application.add_handler(
+        ConversationHandler(
+            entry_points=[CommandHandler("personel_aktif", personel_aktif_start)],
+            states={
+                PERSONNEL_TOGGLE_DEPARTMENT: [MessageHandler(filters.TEXT & ~filters.COMMAND, personel_toggle_department)],
+                PERSONNEL_TOGGLE_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, personel_toggle_name)],
+            },
+            fallbacks=[CommandHandler("iptal", kuralayarla_cancel)],
+        )
+    )
     application.add_handler(
         ConversationHandler(
             entry_points=[CommandHandler("personel_sil", personel_sil_start)],

@@ -18,9 +18,11 @@ class Database:
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
-        connection = sqlite3.connect(self.path)
+        connection = sqlite3.connect(self.path, timeout=30)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute("PRAGMA journal_mode = WAL")
+        connection.execute("PRAGMA busy_timeout = 30000")
         try:
             yield connection
             connection.commit()
@@ -157,6 +159,17 @@ class Database:
                     FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE CASCADE
                 )
                 """
+            )
+
+            # Performans için index'ler
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_notified_dept_date ON notified_violations (department_id, report_date)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_leave_periods_dept ON personnel_leave_periods (department_id, start_at)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_dept_weekly_leaves ON department_weekly_leaves (department_id, weekday)"
             )
 
     def add_department(self, name: str, company_code: str, telegram_chat_id: str) -> Department:
@@ -352,6 +365,29 @@ class Database:
         with self.connect() as connection:
             cursor = connection.execute("DELETE FROM personnel WHERE id = ?", (personnel_id,))
         return cursor.rowcount > 0
+
+    def set_personnel_active(self, personnel_id: int, active: bool) -> bool:
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "UPDATE personnel SET is_active = ? WHERE id = ?",
+                (1 if active else 0, personnel_id),
+            )
+        return cursor.rowcount > 0
+
+    def has_active_leave(self, department_id: int, personnel_name: str, current_at: str) -> bool:
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT 1 FROM personnel_leave_periods
+                WHERE department_id = ?
+                  AND lower(personnel_name) = lower(?)
+                  AND datetime(start_at) <= datetime(?)
+                  AND end_at IS NULL
+                LIMIT 1
+                """,
+                (department_id, personnel_name.strip(), current_at),
+            ).fetchone()
+        return row is not None
 
     def start_leave(self, department_identifier: str | int, personnel_name: str, start_at: str) -> bool:
         department = self.get_department(department_identifier)
@@ -576,6 +612,15 @@ class Database:
                     for personnel_name, violation_key in violations
                 ],
             )
+
+    def cleanup_old_notified_violations(self, before_date: str) -> int:
+        """Dünden önceki notified ihlal kayıtlarını temizler. Sadece bugünün ihlallerini tutmak için kullanılır."""
+        with self.connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM notified_violations WHERE report_date < ?",
+                (before_date,),
+            )
+            return cursor.rowcount
 
     @staticmethod
     def _department_from_row(row: sqlite3.Row) -> Department:

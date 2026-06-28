@@ -87,10 +87,28 @@ class HandlerTest(unittest.TestCase):
 
         self.assertFalse(_is_allowed(update, context))
 
-    def test_group_member_can_use_admin_commands_in_registered_department_group(self) -> None:
+    def test_group_member_cannot_use_admin_commands_without_admin_id(self) -> None:
         update = SimpleNamespace(
             effective_chat=SimpleNamespace(id=-1001, type="group", title="Satış1"),
             effective_user=SimpleNamespace(id=7),
+        )
+        context = SimpleNamespace(
+            application=SimpleNamespace(
+                bot_data={
+                    "config": _config(admin_user_ids={42}),
+                    "database": SimpleNamespace(
+                        list_departments=lambda: [Department(1, "Satış1", "COMPANY", "-1001", True)]
+                    ),
+                }
+            )
+        )
+
+        self.assertFalse(_can_use_admin_command(update, context))
+
+    def test_admin_can_use_admin_commands_in_registered_department_group(self) -> None:
+        update = SimpleNamespace(
+            effective_chat=SimpleNamespace(id=-1001, type="group", title="Satış1"),
+            effective_user=SimpleNamespace(id=42),
         )
         context = SimpleNamespace(
             application=SimpleNamespace(

@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 from bot.config import Config
 from bot.models import Department, DepartmentRules
+from bot.service import DepartmentReport
 from bot.scheduler import _send_message_with_retry, _should_wait_before_next_department, send_scheduled_reports
 
 
@@ -38,6 +39,32 @@ class SchedulerTest(unittest.TestCase):
             asyncio.run(send_scheduled_reports(application))
 
         generate.assert_not_awaited()
+        application.bot.send_message.assert_not_awaited()
+
+    def test_scheduled_report_is_skipped_when_should_send_false(self) -> None:
+        department = Department(1, "Destek", "COMPANY", "CHAT", True)
+        database = SimpleNamespace(
+            list_departments=lambda only_active=False: [department],
+            is_department_weekly_leave=lambda department_id, weekday, report_date: False,
+            get_rules=lambda department_id: DepartmentRules(department_id, time(11, 10), None, None, None, None, None, 15, True),
+            mark_notified_violations=lambda *args, **kwargs: None,
+        )
+        application = SimpleNamespace(
+            bot_data={
+                "config": _config(),
+                "database": database,
+                "client": SimpleNamespace(),
+            },
+            bot=SimpleNamespace(send_message=AsyncMock()),
+        )
+
+        with patch(
+            "bot.scheduler.generate_department_report_payload",
+            new_callable=AsyncMock,
+            return_value=DepartmentReport("CHAT", "✅ Yeni ihlal yok", (), False),
+        ):
+            asyncio.run(send_scheduled_reports(application))
+
         application.bot.send_message.assert_not_awaited()
 
     def test_send_message_retries_before_success(self) -> None:

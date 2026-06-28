@@ -11,8 +11,9 @@ from bot.invekto_client import InvektoClient
 from bot.models import Personnel
 from bot.reporting import build_department_report
 from bot.rules import PersonnelEvaluation
-from bot.rules import evaluate_department, normalize_calls
+from bot.rules import evaluate_department, find_unmatched_call_names, normalize_calls
 from bot.rules import _duration_to_seconds, _normalize_extension, _normalize_key
+from bot.violation_keys import violation_key
 
 
 logger = logging.getLogger(__name__)
@@ -52,21 +53,31 @@ async def generate_department_report_payload(
     rules = database.get_rules(department.id)
     if not rules.is_configured:
         raise ValueError("Departman kuralları tanımlı değil. Önce /kuralayarla ile kuralları giriniz.")
+    if database.is_department_weekly_leave(department.id, report_date.weekday(), report_date.isoformat()):
+        message = (
+            f"🟨 {department.name} için bugün haftalık departman izin günü.\n"
+            "Otomatik saatlik rapor gönderilmez. Manuel /rapor da bu gün atlandı."
+        )
+        return DepartmentReport(department.telegram_chat_id, message, (), False)
     personnel = database.list_personnel(department.id)
     raw_calls = await client.fetch_call_report(department.company_code, report_date)
     calls = normalize_calls(raw_calls, now.tzinfo)
     leave_periods = _load_leave_periods(database, department.id, report_date, now.tzinfo)
     responsibles = database.list_responsibles(department.id)
-    evaluations = evaluate_department(
-        calls,
-        personnel,
-        rules,
-        report_date,
-        now,
-        now.tzinfo,
-        leave_periods=leave_periods,
-    )
-    evaluations = await _with_performance_totals(client, department.company_code, report_date, evaluations, personnel)
+    unmatched_call_names = find_unmatched_call_names(calls, personnel)
+    if len(raw_calls) == 0:
+        evaluations: list[PersonnelEvaluation] = []
+    else:
+        evaluations = evaluate_department(
+            calls,
+            personnel,
+            rules,
+            report_date,
+            now,
+            now.tzinfo,
+            leave_periods=leave_periods,
+        )
+        evaluations = await _with_performance_totals(client, department.company_code, report_date, evaluations, personnel)
     notified_violations = database.list_notified_violations(department.id, report_date.isoformat()) if suppress_notified else set()
     report_evaluations = _filter_notified_violations(evaluations, notified_violations)
     notification_violations = tuple(_violation_keys(report_evaluations)) if suppress_notified else ()
@@ -82,8 +93,14 @@ async def generate_department_report_payload(
         personnel=personnel,
         responsibles=responsibles,
         new_violations_only=suppress_notified,
+        unmatched_call_names=unmatched_call_names,
     )
-    should_send = True
+    should_send = _should_send_report(
+        suppress_notified=suppress_notified,
+        notification_violations=notification_violations,
+        raw_call_count=len(raw_calls),
+        processed_call_count=len(calls),
+    )
     return DepartmentReport(department.telegram_chat_id, message, notification_violations, should_send)
 
 
@@ -116,10 +133,25 @@ def _violation_keys(evaluations: list[PersonnelEvaluation]) -> list[tuple[str, s
 
 
 def _violation_key(violation: str) -> str:
-    # Dinamik değer içeren yeni ihlal mesajları eklenirse bu anahtar normalizasyonu genişletilmelidir.
-    if violation.casefold().startswith("güncel bekleme ihlali:"):
-        return "güncel bekleme ihlali"
-    return " ".join(violation.casefold().split())
+    return violation_key(violation)
+
+
+def _should_send_report(
+    *,
+    suppress_notified: bool,
+    notification_violations: tuple[tuple[str, str], ...],
+    raw_call_count: int,
+    processed_call_count: int,
+) -> bool:
+    if not suppress_notified:
+        return True
+    if notification_violations:
+        return True
+    if raw_call_count == 0:
+        return True
+    if raw_call_count > 0 and processed_call_count == 0:
+        return True
+    return False
 
 
 def _raw_call_sample_keys(raw_calls: list[dict[str, object]]) -> list[str]:
